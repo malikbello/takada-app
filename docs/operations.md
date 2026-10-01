@@ -7,6 +7,14 @@
 | Clinic hub | Laptop or mini-PC on the clinic Wi-Fi | Docker. `deploy/compose/hub.yml`: Takada server + phc-scribe API (+ the model, when ready) + HTTPS proxy. |
 | Cloud | Any container platform (Kubernetes manifests in `deploy/k8s/`) | The same server image with `ROLE=cloud`, and a phc-scribe API with the GPU model. |
 
+## Cloud preview of the phone app
+The phone app alone (no hub) is deployed to https://takada-app.vercel.app. `apps/mobile/public/vercel.json` holds its security headers and SPA rewrites:
+```bash
+pnpm --filter mobile build
+npx vercel deploy apps/mobile/dist --prod
+```
+Without a paired hub it records, flags danger signs and runs the visit guide on the phone; AI drafting and sync need a hub.
+
 ## Set up a clinic hub
 1. `cp deploy/compose/hub.env.example deploy/compose/hub.env`, then fill it in. Generate each secret with `openssl rand -base64 32`; never reuse them across clinics.
 2. Build the phc-scribe API image from the `phc-scribe` repo, tagged `phc-scribe-api:local`.

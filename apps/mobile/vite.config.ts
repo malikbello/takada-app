@@ -21,5 +21,6 @@ export default defineConfig({
       },
     }),
   ],
-  build: { target: "es2020", sourcemap: true },
+  // Never inline fonts as data: URLs: the CSP (font-src via default-src 'self') would block them.
+  build: { target: "es2020", sourcemap: true, assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined) },
 });
