@@ -3,23 +3,26 @@ import { useEffect, useState } from "react";
 import { makeEvent, reduce, type Visit, type VisitEvent } from "@takada/protocol";
 import { db } from "./db";
 
-export type Profile = { worker: string; facility: string; deviceId: string };
+import type { Lang } from "./greet";
+
+export type Profile = { worker: string; facility: string; deviceId: string; lang: Lang };
 
 export async function getProfile(): Promise<Profile | null> {
-  const rows = await db.settings.bulkGet(["worker", "facility", "deviceId"]);
-  const [worker, facility, deviceId] = rows.map((r) => r?.value);
-  return worker && facility && deviceId ? { worker, facility, deviceId } : null;
+  const rows = await db.settings.bulkGet(["worker", "facility", "deviceId", "lang"]);
+  const [worker, facility, deviceId, lang] = rows.map((r) => r?.value);
+  return worker && facility && deviceId ? { worker, facility, deviceId, lang: (lang as Lang) ?? "yo" } : null;
 }
 
-export async function saveProfile(worker: string, facility: string): Promise<Profile> {
+export async function saveProfile(worker: string, facility: string, lang: Lang = "yo"): Promise<Profile> {
   const existing = await db.settings.get("deviceId");
   const deviceId = existing?.value ?? `dev-${crypto.randomUUID()}`;
   await db.settings.bulkPut([
     { key: "worker", value: worker },
     { key: "facility", value: facility },
     { key: "deviceId", value: deviceId },
+    { key: "lang", value: lang },
   ]);
-  return { worker, facility, deviceId };
+  return { worker, facility, deviceId, lang };
 }
 
 type NewEvent = Parameters<typeof makeEvent>[0];

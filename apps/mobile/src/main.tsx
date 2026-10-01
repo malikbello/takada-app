@@ -7,6 +7,7 @@ import { ease } from "./lib/motion";
 import { useRoute } from "./lib/nav";
 import { getProfile, type Profile } from "./lib/store";
 import { startSync } from "./lib/sync";
+import { applyEffects } from "./lib/effects";
 import { Review } from "./screens/Review";
 import { Settings } from "./screens/Settings";
 import { Today } from "./screens/Today";
@@ -15,6 +16,7 @@ import { Welcome } from "./screens/Welcome";
 import "./styles.css";
 
 registerSW({ immediate: true });
+applyEffects();
 // The phone is the only copy of a record until it syncs: ask the browser to keep our data.
 navigator.storage?.persist?.().catch(() => undefined);
 
@@ -35,7 +37,7 @@ function App() {
       <m.div key={key} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease }}>
         {route.name === "visit" ? <VisitScreen id={route.id} profile={profile} />
           : route.name === "review" ? <Review id={route.id} profile={profile} />
-          : route.name === "settings" ? <Settings profile={profile} />
+          : route.name === "settings" ? <Settings profile={profile} onProfile={setProfile} />
           : <Today profile={profile} />}
       </m.div>
     </AnimatePresence>
@@ -45,6 +47,7 @@ function App() {
 window.addEventListener("unhandledrejection", (e) => console.error("unhandled", e.reason));
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
+    <div className="blobs" aria-hidden="true"><div className="blob b1" /><div className="blob b2" /><div className="blob b3" /></div>
     <LazyMotion features={() => import("./lib/features").then((r) => r.default)} strict>
       <MotionConfig reducedMotion="user">
         <App />

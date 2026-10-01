@@ -15,7 +15,7 @@ describe("on-device store", () => {
     const a = await saveProfile("Nurse A", "PHC-1");
     const b = await saveProfile("Nurse A", "PHC-2");
     expect(b.deviceId).toBe(a.deviceId);
-    expect(await getProfile()).toEqual(b);
+    expect(await getProfile()).toEqual({ ...b, lang: "yo" });
   });
 
   it("stores visits as events, all unsynced until acknowledged", async () => {

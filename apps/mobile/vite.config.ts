@@ -10,8 +10,8 @@ export default defineConfig({
       injectRegister: "auto",
       workbox: { globPatterns: ["**/*.{js,css,html,svg,png,woff2}"], navigateFallback: "/index.html" },
       manifest: {
-        name: "Takada",
-        short_name: "Takada",
+        name: "Tákàdá",
+        short_name: "Tákàdá",
         description: "Antenatal visit assistant for primary health care",
         theme_color: "#fffdfb",
         background_color: "#fffdfb",

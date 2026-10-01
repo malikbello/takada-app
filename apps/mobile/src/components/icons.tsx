@@ -63,6 +63,9 @@ export function Logo({ size = 48, animate = false, mono = false }: { size?: numb
   );
 }
 
+/** "tákàdá": paper, written the Yorùbá way. */
+export const NAME = "tákàdá".normalize("NFC");
+
 export function Wordmark({ size = 20 }: { size?: number }) {
-  return <span style={{ fontSize: size, fontWeight: 800, letterSpacing: "-0.035em", color: "var(--ink)" }}>takada</span>;
+  return <span lang="yo" style={{ fontSize: size, fontWeight: 800, letterSpacing: "-0.03em", color: "var(--ink)" }}>{NAME}</span>;
 }

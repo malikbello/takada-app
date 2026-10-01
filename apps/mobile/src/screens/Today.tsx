@@ -16,7 +16,7 @@ export function Today({ profile }: { profile: Profile }) {
   const online = useOnline();
   const sync = useSyncState();
   const [starting, setStarting] = useState(false);
-  const g = greeting();
+  const g = greeting(profile.lang);
   const today = new Date().toDateString();
   const todays = (visits ?? []).filter((v) => new Date(v.startedAt).toDateString() === today);
   const open = (visits ?? []).filter((v) => !v.confirmed).length;
@@ -34,8 +34,8 @@ export function Today({ profile }: { profile: Profile }) {
       </div>
 
       <m.div style={{ padding: "20px 2px 4px" }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}>
-        <p className="overline" style={{ margin: 0 }}>{g.yo}</p>
-        <h1 className="display" style={{ marginTop: 6 }}>{g.en},<br /><span className="brand-text">{profile.worker.split(" ")[0]}</span></h1>
+        {g.en && <p className="overline" style={{ margin: 0 }}>{g.en}</p>}
+        <h1 className="display" lang={profile.lang} style={{ marginTop: 6 }}>{g.local},<br /><span className="brand-text">{profile.worker.split(" ")[0]}</span></h1>
         <p className="muted" style={{ margin: "8px 0 0", fontWeight: 500 }}>{profile.facility}</p>
       </m.div>
 

@@ -2,16 +2,19 @@ import { m } from "motion/react";
 import { useState, type FormEvent } from "react";
 import { I, Logo } from "../components/icons";
 import { ErrorNote, TopBar } from "../components/ui";
-import { useLive, type Profile } from "../lib/store";
+import { LANGS } from "../lib/greet";
+import { applyEffects, getEffects, setEffects, type Effects } from "../lib/effects";
+import { saveProfile, useLive, type Profile } from "../lib/store";
 import { getLink, pair, syncOnce, useSyncState } from "../lib/sync";
 
-export function Settings({ profile }: { profile: Profile }) {
+export function Settings({ profile, onProfile }: { profile: Profile; onProfile: (p: Profile) => void }) {
   const { data: link } = useLive(getLink);
   const sync = useSyncState();
   const [url, setUrl] = useState(() => (location.port === "8080" || location.hostname.endsWith(".local") ? location.origin : ""));
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fx, setFx] = useState<Effects>(getEffects());
   async function doPair(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -35,6 +38,25 @@ export function Settings({ profile }: { profile: Profile }) {
           <div className="grow"><div className="h">{profile.worker}</div><div className="muted small">{profile.facility}</div></div>
         </section>
         <section className="card stack">
+          <div className="h">Greet me in</div>
+          <div className="chips">
+            {LANGS.map(([k, l]) => (
+              <m.button type="button" key={k} className="chip" aria-pressed={profile.lang === k} whileTap={{ scale: 0.94 }}
+                onClick={async () => onProfile(await saveProfile(profile.worker, profile.facility, k))}>{l}</m.button>
+            ))}
+          </div>
+        </section>
+        <section className="card stack">
+          <div className="h">Visual effects</div>
+          <div className="chips">
+            {([["auto", "Auto"], ["full", "Full glass"], ["lite", "Light (saves battery)"]] as [Effects, string][]).map(([k, l]) => (
+              <m.button type="button" key={k} className="chip" aria-pressed={fx === k} whileTap={{ scale: 0.94 }}
+                onClick={() => { setEffects(k); setFx(k); applyEffects(); }}>{l}</m.button>
+            ))}
+          </div>
+          <p className="faint tiny" style={{ margin: 0 }}>Auto uses the light style on phones with little memory, so the app never lags.</p>
+        </section>
+        <section className="card stack">
           <div className="row"><span className="badge-ic" style={{ background: "var(--lavender)", color: "var(--plum)" }}><I.shield /></span><div className="h grow">Clinic hub</div>
             {link && <span className={`pill ${sync.error ? "danger" : "sage"}`}><span className="dot" />{sync.error ? "Problem" : "Paired"}</span>}</div>
           {link ? (
@@ -56,7 +78,7 @@ export function Settings({ profile }: { profile: Profile }) {
             <ErrorNote error={error} />
           </form>
         </section>
-        <div className="center faint tiny" style={{ paddingTop: 10 }}><Logo size={28} mono /><p style={{ margin: "6px 0 0" }}>Takada · clinical content is a draft until signed off</p></div>
+        <div className="center faint tiny" style={{ paddingTop: 10 }}><Logo size={28} mono /><p style={{ margin: "6px 0 0" }}>Tákàdá · clinical content is a draft until signed off</p></div>
       </main>
     </>
   );

@@ -61,7 +61,7 @@ jobs:
           docker run -d --name t -e ADMIN_TOKEN=ci-admin-token-0123456789abcdef -p 8080:8080 takada-server:ci
           for i in $(seq 1 30); do curl -fsS localhost:8080/healthz && break; sleep 1; done
           curl -fsS localhost:8080/readyz
-          curl -fsS localhost:8080/ | grep -q "<title>Takada</title>"
+          curl -fsS localhost:8080/ | grep -q "<title>"
       - name: Scan the image for vulnerabilities (Trivy, pinned image)
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.75.0 \

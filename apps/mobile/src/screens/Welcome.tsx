@@ -1,13 +1,14 @@
 import { AnimatePresence, m } from "motion/react";
 import { useState, type FormEvent } from "react";
-import { I, Logo, type IconName } from "../components/icons";
+import { I, Logo, NAME, type IconName } from "../components/icons";
 import { ErrorNote } from "../components/ui";
+import { LANGS, welcome, type Lang } from "../lib/greet";
 import { ease, spring } from "../lib/motion";
 import { go } from "../lib/nav";
 import { saveProfile, type Profile } from "../lib/store";
 
 const PROMISES: [IconName, string, string, string, string][] = [
-  ["mic", "Talk as you always do", "Yorùbá, Pidgin or English. Takada writes the record.", "#fff1ec", "#d4573a"],
+  ["mic", "Talk as you always do", "Yorùbá, Pidgin or English. Tákàdá writes the record.", "#fff1ec", "#d4573a"],
   ["heart", "Keep mother and baby safe", "Danger signs flagged at once, with the protocol behind them.", "#fdeef1", "#c2416c"],
   ["sparkle", "Never miss a question", "A gentle guide to what to ask next.", "#f2edfb", "#5b3aa5"],
 ];
@@ -18,6 +19,7 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
   const [step, setStep] = useState<0 | 1>(0);
   const [worker, setWorker] = useState("");
   const [facility, setFacility] = useState("");
+  const [lang, setLang] = useState<Lang>("yo");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,7 +28,7 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
     if (!worker.trim() || !facility.trim()) return setError("Please fill in both");
     setBusy(true);
     try {
-      onDone(await saveProfile(worker.trim(), facility.trim()));
+      onDone(await saveProfile(worker.trim(), facility.trim(), lang));
       go("/");
     } catch (err) {
       setError((err as Error).message);
@@ -36,15 +38,14 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
 
   return (
     <>
-      <div className="blobs" aria-hidden="true"><div className="blob b1" /><div className="blob b2" /><div className="blob b3" /></div>
       <AnimatePresence mode="wait">
         {step === 0 ? (
           <m.main key="hello" className="page" style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", justifyContent: "center", paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}
             exit={{ opacity: 0, x: -40 }} transition={{ duration: 0.3, ease }}>
             <div className="center">
               <div style={{ display: "grid", placeItems: "center" }}><Logo size={104} animate /></div>
-              <h1 className="display" aria-label="takada" style={{ fontSize: 46, marginTop: 18 }}>
-                {"takada".split("").map((ch, i) => (
+              <h1 className="display" aria-label={NAME} lang="yo" style={{ fontSize: 46, marginTop: 18 }}>
+                {[...NAME].map((ch, i) => (
                   <m.span key={i} style={{ display: "inline-block" }} initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 1.45 + i * 0.05 }}>{ch}</m.span>
                 ))}
               </h1>
@@ -74,7 +75,7 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
             <form className="stack" onSubmit={save}>
               <Logo size={56} />
               <div>
-                <p className="overline" style={{ margin: "14px 0 6px" }}>Ẹ kú àbọ̀ · Welcome</p>
+                <p className="overline" style={{ margin: "14px 0 6px" }}>{welcome(lang)}{lang !== "en" ? " · Welcome" : ""}</p>
                 <h1 className="title" style={{ fontSize: 28 }}>Who's caring for mothers today?</h1>
               </div>
               <label className="field"><span>Your name or staff ID</span>
@@ -83,6 +84,13 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
               <label className="field"><span>Your facility</span>
                 <input className="input" value={facility} onChange={(e) => setFacility(e.target.value)} placeholder="Name or HFR code" />
               </label>
+              <div className="field"><span>The language you'd like to be greeted in</span>
+                <div className="chips">
+                  {LANGS.map(([k, l]) => (
+                    <m.button type="button" key={k} className="chip" aria-pressed={lang === k} onClick={() => setLang(k)} whileTap={{ scale: 0.94 }}>{l}</m.button>
+                  ))}
+                </div>
+              </div>
               <ErrorNote error={error} />
               <m.button className="btn primary block xl" type="submit" disabled={busy} whileTap={{ scale: 0.97 }}>{busy ? "One moment…" : <>Continue <I.arrow /></>}</m.button>
               <button className="link" type="button" onClick={() => setStep(0)} style={{ alignSelf: "center" }}>Back</button>
