@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 pnpm install --frozen-lockfile --silent
+pnpm audit --prod --audit-level high
 pnpm -r typecheck
 pnpm -r test
 pnpm -r build

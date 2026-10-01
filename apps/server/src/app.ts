@@ -60,7 +60,8 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     }
   });
 
-  app.setErrorHandler((err, req, reply) => {
+  app.setErrorHandler((raw, req, reply) => {
+    const err = raw as Error & { statusCode?: number };
     if (err instanceof ApiError) return reply.code(err.status).send({ error: { code: err.code, message: err.message } });
     if (err instanceof z.ZodError) return reply.code(400).send({ error: { code: "invalid_request", message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") } });
     const status = (err as { statusCode?: number }).statusCode;
@@ -215,8 +216,8 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
       index: ["index.html"],
       setHeaders: (res, path) => {
         // The service worker and app shell must revalidate; hashed assets can cache for a year.
-        res.setHeader("Cache-Control", /\/assets\//.test(path) ? "public, max-age=31536000, immutable" : "no-cache");
-        res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-ancestors 'none'");
+        res.header("Cache-Control", /\/assets\//.test(path) ? "public, max-age=31536000, immutable" : "no-cache");
+        res.header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-ancestors 'none'");
       },
     });
   }
