@@ -20,6 +20,25 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.18.6)
 
+  packages/protocol:
+    dependencies:
+      '@takada/clinical':
+        specifier: workspace:*
+        version: link:../clinical
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 22.18.6
+        version: 22.18.6
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.18.6)
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -592,6 +611,9 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
 
   '@esbuild/aix-ppc64@0.28.2':
@@ -1042,3 +1064,5 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  zod@3.25.76: {}
