@@ -33,10 +33,10 @@ export function Today({ profile }: { profile: Profile }) {
         </div>
       </div>
 
-      <m.div style={{ padding: "20px 2px 4px" }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}>
-        {g.en && <p className="overline" style={{ margin: 0 }}>{g.en}</p>}
-        <h1 className="display" lang={profile.lang} style={{ marginTop: 6 }}>{g.local},<br /><span className="brand-text">{profile.worker.split(" ")[0]}</span></h1>
-        <p className="muted" style={{ margin: "8px 0 0", fontWeight: 500 }}>{profile.facility}</p>
+      <m.div style={{ padding: "18px 2px 2px" }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}>
+        <p className="overline" lang={profile.lang} style={{ margin: 0 }}>{g.local}{g.en ? <span style={{ color: "var(--ink-3)" }}> · {g.en}</span> : null}</p>
+        <h1 className="title" style={{ fontSize: 30, marginTop: 4 }}>{profile.worker.split(" ")[0]}</h1>
+        <p className="muted small" style={{ margin: "2px 0 0", fontWeight: 500 }}>{profile.facility}</p>
       </m.div>
 
       <m.button className="hero" onClick={() => setStarting(true)} style={{ width: "100%", textAlign: "left", cursor: "pointer", display: "block", font: "inherit" }}

@@ -13,7 +13,7 @@ const G: Record<Lang, Record<Part, string>> = {
   pcm: { morning: "Good morning o", afternoon: "Good afternoon o", evening: "Good evening o" },
   en: { morning: "Good morning", afternoon: "Good afternoon", evening: "Good evening" },
 };
-const WELCOME: Record<Lang, string> = { yo: "Ẹ kú àbọ̀", ha: "Barka da zuwa", ig: "Nnọọ", pcm: "You don come", en: "Welcome" };
+const WELCOME: Record<Lang, string> = { yo: "Ẹ káàbọ̀", ha: "Barka da zuwa", ig: "Nnọọ", pcm: "You don come", en: "Welcome" };
 
 export function part(d = new Date()): Part {
   const h = d.getHours();
