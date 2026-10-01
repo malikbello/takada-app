@@ -25,9 +25,11 @@ export type Visit = {
 
 export function order(events: VisitEvent[]): VisitEvent[] {
   const seen = new Set<string>();
+  const start = (e: VisitEvent) => (e.type === "visit.started" ? 0 : 1);
   return [...events]
     .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
-    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    // The visit's start always comes first (another device's clock may lag); then time.
+    .sort((a, b) => start(a) - start(b) || (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 const key = (f: { concept: string; assertion: string }) => `${f.concept}|${f.assertion}`;

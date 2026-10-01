@@ -70,3 +70,24 @@ describe("visit state", () => {
     expect(reduce([...ev, confirm, amend])?.confirmed).toBeNull();
   });
 });
+
+describe("ordering", () => {
+  it("keeps the order of events made in the same millisecond", async () => {
+    const id = crypto.randomUUID();
+    const w = { visitId: id, deviceId: "p", worker: "n" };
+    const evs = [];
+    for (let i = 0; i < 50; i++) {
+      evs.push(await makeEvent({ ...w, type: i === 0 ? "visit.started" : "note.added", payload: i === 0 ? { facility: "F", patientRef: "R", language: "en", firstContact: null, weeks: null } : { text: `n${i}` } } as never));
+    }
+    const ats = evs.map((e) => e.at);
+    expect(new Set(ats).size).toBe(50);
+    expect(reduce([...evs].reverse())?.notes).toEqual(evs.slice(1).map((_, i) => `n${i + 1}`));
+  });
+
+  it("replays the visit start first even if another device's clock is behind", async () => {
+    const id = crypto.randomUUID();
+    const late = await makeEvent({ visitId: id, deviceId: "p", worker: "n", at: "2026-10-02T10:00:00.000Z", type: "visit.started", payload: { facility: "F", patientRef: "R", language: "en", firstContact: null, weeks: null } });
+    const early = await makeEvent({ visitId: id, deviceId: "q", worker: "n", at: "2026-10-02T09:59:59.000Z", type: "note.added", payload: { text: "from a phone with a slow clock" } });
+    expect(reduce([early, late])?.notes).toEqual(["from a phone with a slow clock"]);
+  });
+});
