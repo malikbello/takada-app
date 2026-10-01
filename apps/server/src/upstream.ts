@@ -1,0 +1,76 @@
+// Client for the phc-scribe /v1 API (contract: phc-scribe docs/openapi.v1.json). The hub
+// points it at the local API with the offline model; the cloud at the GPU deployment.
+import type { Finding, Vitals } from "@takada/protocol";
+
+export type Draft = { transcript: string; findings: Finding[]; vitals: Vitals; model: string; needsReview: string[] };
+
+export interface Scribe {
+  transcribe(wav: Buffer, language: string): Promise<string>;
+  extract(text: string, language: string | null): Promise<Omit<Draft, "transcript">>;
+}
+
+export class UpstreamError extends Error {
+  constructor(public code: string, message: string, public retryable: boolean) {
+    super(message);
+  }
+}
+
+type Encounter = {
+  findings?: { concept: string; assertion: string; evidence?: { text: string } | null }[];
+  vitals?: {
+    blood_pressure?: { systolic: number; diastolic: number } | null;
+    temperature?: { value: number; unit: string } | null;
+    weight?: { value: number } | null;
+    pulse?: { value: number } | null;
+  };
+};
+
+export function toDraft(record: Encounter, dropped: { path?: string; reason?: string }[], model: string): Omit<Draft, "transcript"> {
+  const findings: Finding[] = (record.findings ?? [])
+    .filter((f) => ["present", "absent", "possible", "historical"].includes(f.assertion))
+    .map((f) => ({ concept: f.concept, assertion: f.assertion as Finding["assertion"], evidence: f.evidence?.text?.slice(0, 500), origin: "model" as const }));
+  const v = record.vitals ?? {};
+  const vitals: Vitals = {};
+  if (v.blood_pressure) Object.assign(vitals, { bp_systolic: v.blood_pressure.systolic, bp_diastolic: v.blood_pressure.diastolic });
+  if (v.temperature) vitals.temperature_c = v.temperature.unit === "Cel" ? v.temperature.value : Math.round(((v.temperature.value - 32) * 5 / 9) * 10) / 10;
+  if (v.weight) vitals.weight_kg = v.weight.value;
+  if (v.pulse) vitals.pulse = v.pulse.value;
+  return { findings, vitals, model, needsReview: dropped.map((d) => `${d.path ?? "field"}: ${d.reason ?? "needs review"}`) };
+}
+
+export function httpScribe(base: string, apiKey?: string, proxy?: { key: string; secret: string }, timeoutMs = 300_000): Scribe {
+  const headers = (type: string): Record<string, string> => ({
+    "Content-Type": type,
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    ...(proxy ? { "Modal-Key": proxy.key, "Modal-Secret": proxy.secret } : {}),
+  });
+  async function call(path: string, init: RequestInit): Promise<unknown> {
+    let res: Response;
+    try {
+      res = await fetch(new URL(path, base), { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      throw new UpstreamError("upstream_unreachable", `phc-scribe unreachable: ${(e as Error).message}`, true);
+    }
+    if (!res.ok) {
+      const retryable = res.status >= 500 || res.status === 429;
+      throw new UpstreamError(`upstream_${res.status}`, `phc-scribe ${path} returned ${res.status}`, retryable);
+    }
+    return res.json();
+  }
+  return {
+    async transcribe(wav, language) {
+      const lang = ["yo", "pcm", "en", "ha", "ig"].includes(language) ? language : "en";
+      const out = (await call(`/v1/transcribe?language=${lang}`, { method: "POST", headers: headers("audio/wav"), body: new Uint8Array(wav) })) as { text: string };
+      return out.text;
+    },
+    async extract(text, language) {
+      const body = JSON.stringify(language && language !== "auto" ? { text, language } : { text });
+      const out = (await call("/v1/extract", { method: "POST", headers: headers("application/json"), body })) as {
+        record: Encounter;
+        grounding: { dropped: { path?: string; reason?: string }[] };
+        versions?: { model?: string };
+      };
+      return toDraft(out.record, out.grounding?.dropped ?? [], out.versions?.model ?? "phc-scribe");
+    },
+  };
+}

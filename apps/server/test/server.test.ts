@@ -1,0 +1,148 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { beforeEach, describe, expect, it } from "vitest";
+import { makeEvent, type VisitEvent } from "@takada/protocol";
+import { buildApp } from "../src/app";
+import { loadConfig } from "../src/config";
+import { openDb } from "../src/db";
+import { claimNext, runJob } from "../src/queue";
+import { UpstreamError, type Scribe } from "../src/upstream";
+
+const ADMIN = "admin-token-for-tests-0123456789";
+let db: ReturnType<typeof openDb>;
+let app: ReturnType<typeof buildApp>;
+
+beforeEach(() => {
+  db = openDb(":memory:");
+  const dir = mkdtempSync(join(tmpdir(), "takada-"));
+  app = buildApp(db, loadConfig({ ADMIN_TOKEN: ADMIN, AUDIO_DIR: join(dir, "audio"), LOG_LEVEL: "silent" } as NodeJS.ProcessEnv));
+});
+
+async function pair(facility = "PHC-1", deviceId = "phone-1") {
+  const code = (await app.inject({ method: "POST", url: "/v1/admin/pairing-codes", headers: { authorization: `Bearer ${ADMIN}` }, payload: { facility } })).json().code;
+  const res = await app.inject({ method: "POST", url: "/v1/pair", payload: { code, deviceId, worker: "nurse" } });
+  return { token: res.json().token as string, deviceId, facility, code };
+}
+
+const auth = (t: string) => ({ authorization: `Bearer ${t}` });
+
+async function visitEvents(deviceId: string, facility: string): Promise<VisitEvent[]> {
+  const visitId = crypto.randomUUID();
+  const who = { visitId, deviceId, worker: "nurse" };
+  return [
+    await makeEvent({ ...who, type: "visit.started", payload: { facility, patientRef: "ANC-1", language: "pcm", firstContact: false, weeks: 30 } }),
+    await makeEvent({ ...who, type: "note.added", payload: { text: "Blood dey comot small. BP 150/100." } }),
+    await makeEvent({ ...who, type: "finding.set", payload: { concept: "vaginal_bleeding", assertion: "present", origin: "worker" } }),
+  ];
+}
+
+const fake = (over: Partial<Scribe> = {}): Scribe => ({
+  transcribe: async () => "spoken words",
+  extract: async () => ({ findings: [{ concept: "fever", assertion: "absent", origin: "model" }], vitals: { bp_systolic: 150, bp_diastolic: 100 }, model: "test-model", needsReview: [] }),
+  ...over,
+});
+
+describe("pairing and auth", () => {
+  it("pairs once per code and rejects wrong, reused or missing credentials", async () => {
+    const p = await pair();
+    expect(p.token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+    expect((await app.inject({ method: "POST", url: "/v1/pair", payload: { code: p.code, deviceId: "x", worker: "y" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/v1/pair", payload: { code: "WRONGCODE", deviceId: "x", worker: "y" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/v1/sync/pull" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/v1/admin/pairing-codes", headers: auth("nope"), payload: { facility: "X" } })).statusCode).toBe(401);
+  });
+
+  it("stops a revoked phone at once", async () => {
+    const p = await pair();
+    await app.inject({ method: "POST", url: `/v1/admin/devices/${p.deviceId}/revoke`, headers: auth(ADMIN) });
+    expect((await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(p.token) })).statusCode).toBe(401);
+  });
+});
+
+describe("sync", () => {
+  it("accepts valid events idempotently and rejects forged ones with a reason", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    const r1 = (await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } })).json();
+    expect(r1.accepted).toHaveLength(3);
+    const r2 = (await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } })).json();
+    expect(r2.accepted).toHaveLength(3);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number }).n).toBe(3);
+    const tampered = { ...ev[1]!, payload: { text: "changed" } };
+    const other = (await visitEvents("someone-else", p.facility))[0]!;
+    const r3 = (await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: [tampered, other, { junk: true }] } })).json();
+    expect(r3.rejected.map((r: { reason: string }) => r.reason)).toEqual(["bad_hash", "wrong_device", "invalid_event"]);
+  });
+
+  it("pulls only the facility's events, with a cursor", async () => {
+    const a = await pair("PHC-1", "phone-a");
+    const b = await pair("PHC-1", "phone-b");
+    const c = await pair("PHC-2", "phone-c");
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(a.token), payload: { events: await visitEvents(a.deviceId, a.facility) } });
+    const pullB = (await app.inject({ method: "GET", url: "/v1/sync/pull?after=0&limit=2", headers: auth(b.token) })).json();
+    expect(pullB.events).toHaveLength(2);
+    const rest = (await app.inject({ method: "GET", url: `/v1/sync/pull?after=${pullB.next}`, headers: auth(b.token) })).json();
+    expect(rest.events).toHaveLength(1);
+    expect((await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(c.token) })).json().events).toHaveLength(0);
+  });
+});
+
+describe("drafting queue", () => {
+  it("drafts a visit from audio + notes, writes the draft back as an event, danger visits first", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    const visitId = ev[0]!.visitId;
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
+    const audioId = crypto.randomUUID();
+    expect((await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${audioId}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: Buffer.from("not a wav file at all, not even close to it..") })).statusCode).toBe(415);
+    const wav = Buffer.alloc(64);
+    wav.write("RIFF", 0, "latin1");
+    wav.write("WAVE", 8, "latin1");
+    expect((await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${audioId}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: wav })).statusCode).toBe(200);
+    const job = (await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId, language: "pcm", audioIds: [audioId] } })).json();
+    expect(job.status).toBe("queued");
+    expect((db.prepare("SELECT priority FROM jobs").get() as { priority: number }).priority).toBe(20); // bleeding = urgent
+    let seen = "";
+    await runJob(db, fake({ extract: async (text) => ((seen = text), { findings: [], vitals: {}, model: "m", needsReview: [] }) }), claimNext(db)!, "hub-1");
+    expect(seen).toContain("spoken words");
+    expect(seen).toContain("Blood dey comot");
+    const status = (await app.inject({ method: "GET", url: `/v1/jobs/${job.id}`, headers: auth(p.token) })).json();
+    expect(status.status).toBe("done");
+    const pulled = (await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(p.token) })).json().events;
+    expect(pulled.at(-1).type).toBe("draft.received");
+  });
+
+  it("retries transient failures with backoff, then fails with a visible error", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
+    const job = (await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId: ev[0]!.visitId, language: "en", audioIds: [] } })).json();
+    const down = fake({ extract: async () => { throw new UpstreamError("upstream_unreachable", "down", true); } });
+    const future = new Date(Date.now() + 10 * 60_000);
+    for (let i = 0; i < 3; i++) {
+      const j = claimNext(db, future);
+      expect(j).not.toBeNull();
+      await runJob(db, down, j!, "hub-1");
+    }
+    const status = (await app.inject({ method: "GET", url: `/v1/jobs/${job.id}`, headers: auth(p.token) })).json();
+    expect(status.status).toBe("failed");
+    expect(status.error).toMatch(/upstream_unreachable/);
+  });
+});
+
+describe("FHIR export and health", () => {
+  it("exports Encounter, Observations, Flag and Provenance; other facilities are refused", async () => {
+    const p = await pair();
+    const other = await pair("PHC-2", "phone-z");
+    const ev = await visitEvents(p.deviceId, p.facility);
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
+    const res = await app.inject({ method: "GET", url: `/v1/visits/${ev[0]!.visitId}/fhir`, headers: auth(p.token) });
+    expect(res.headers["content-type"]).toContain("application/fhir+json");
+    const types = res.json().entry.map((e: { resource: { resourceType: string } }) => e.resource.resourceType);
+    expect(types).toEqual(expect.arrayContaining(["Encounter", "Observation", "Flag", "Provenance"]));
+    expect((await app.inject({ method: "GET", url: `/v1/visits/${ev[0]!.visitId}/fhir`, headers: auth(other.token) })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/healthz" })).json().ok).toBe(true);
+    expect((await app.inject({ method: "GET", url: "/readyz" })).json().ok).toBe(true);
+  });
+});
