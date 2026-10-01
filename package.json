@@ -1,0 +1,13 @@
+{
+  "name": "takada",
+  "private": true,
+  "description": "Takada: offline-first antenatal visit assistant for Nigerian primary health care (ADR-0023 in phc-scribe).",
+  "packageManager": "pnpm@10.33.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
+  }
+}
