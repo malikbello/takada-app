@@ -55,6 +55,8 @@ export const VisitEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("finding.set"), payload: Finding }),
   z.object({ ...base, type: z.literal("finding.removed"), payload: z.object({ concept: z.string(), assertion: Assertion }) }),
   z.object({ ...base, type: z.literal("vitals.set"), payload: Vitals }),
+  /** The worker marks a visit-guide question as asked (or un-marks it). */
+  z.object({ ...base, type: z.literal("guide.marked"), payload: z.object({ itemId: z.string().min(1).max(64), asked: z.boolean() }) }),
   z.object({
     ...base,
     type: z.literal("draft.received"),

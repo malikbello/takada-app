@@ -5,7 +5,7 @@ import { ErrorNote } from "./components/ui";
 import { useRoute } from "./lib/nav";
 import { getProfile, type Profile } from "./lib/store";
 import { Review } from "./screens/Review";
-import { Setup } from "./screens/Setup";
+import { Welcome } from "./screens/Welcome";
 import { Today } from "./screens/Today";
 import { Settings } from "./screens/Settings";
 import { VisitScreen } from "./screens/VisitScreen";
@@ -26,9 +26,9 @@ function App() {
     getProfile().then(setProfile).catch(setError);
     return startSync();
   }, []);
-  if (error) return <main class="wrap"><ErrorNote error={`Storage is unavailable on this phone: ${error.message}`} /></main>;
-  if (profile === undefined) return <main class="wrap muted">Loading…</main>;
-  if (profile === null || route.name === "setup") return <Setup onDone={setProfile} />;
+  if (error) return <main class="page"><ErrorNote error={`Storage is unavailable on this phone: ${error.message}`} /></main>;
+  if (profile === undefined) return null;
+  if (profile === null || route.name === "setup") return <Welcome onDone={setProfile} />;
   if (route.name === "visit") return <VisitScreen id={route.id} profile={profile} />;
   if (route.name === "review") return <Review id={route.id} profile={profile} />;
   if (route.name === "settings") return <Settings profile={profile} />;
@@ -36,4 +36,4 @@ function App() {
 }
 
 window.addEventListener("unhandledrejection", (e) => console.error("unhandled", e.reason));
-render(<App />, document.getElementById("app")!);
+render(<><div class="aurora" aria-hidden="true" /><App /></>, document.getElementById("app")!);

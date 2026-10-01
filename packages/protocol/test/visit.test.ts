@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonical, flagsOf, guideOf, makeEvent, recordHash, reduce, verifyEvent, type VisitEvent } from "../src";
+import { canonical, flagsOf, guideOf, makeEvent, nextQuestion, recordHash, reduce, verifyEvent, type VisitEvent } from "../src";
 
 const visitId = crypto.randomUUID();
 const who = { visitId, deviceId: "phone-1", worker: "nurse-1" };
@@ -89,5 +89,27 @@ describe("ordering", () => {
     const late = await makeEvent({ visitId: id, deviceId: "p", worker: "n", at: "2026-10-02T10:00:00.000Z", type: "visit.started", payload: { facility: "F", patientRef: "R", language: "en", firstContact: null, weeks: null } });
     const early = await makeEvent({ visitId: id, deviceId: "q", worker: "n", at: "2026-10-02T09:59:59.000Z", type: "note.added", payload: { text: "from a phone with a slow clock" } });
     expect(reduce([early, late])?.notes).toEqual(["from a phone with a slow clock"]);
+  });
+});
+
+describe("guide marks and next question", () => {
+  it("marks a question as asked by hand, and the next question moves on", async () => {
+    const ev = await visit();
+    const v1 = reduce(ev)!;
+    const first = nextQuestion(v1);
+    expect(first).not.toBeNull();
+    const mark = await makeEvent({ ...who, at: at(), type: "guide.marked", payload: { itemId: first!.itemId, asked: true } });
+    const v2 = reduce([...ev, mark])!;
+    expect(guideOf(v2).items.find((i) => i.id === first!.itemId)?.covered).toBe(true);
+    expect(nextQuestion(v2)?.itemId).not.toBe(first!.itemId);
+    const unmark = await makeEvent({ ...who, at: at(), type: "guide.marked", payload: { itemId: first!.itemId, asked: false } });
+    expect(reduce([...ev, mark, unmark])!.asked).toEqual([]);
+  });
+
+  it("puts open follow-ups before the checklist", async () => {
+    const ev = await visit();
+    ev.push(await makeEvent({ ...who, at: at(), type: "finding.set", payload: { concept: "fever", assertion: "present", origin: "worker" } }));
+    const q = nextQuestion(reduce(ev)!);
+    expect(q?.why).toMatch(/Fever/);
   });
 });

@@ -12,7 +12,10 @@ export function parse(hash: string): Route {
 }
 
 export function go(path: string): void {
-  window.location.hash = path;
+  // Native-feeling page transitions where supported (View Transitions API).
+  const d = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (d.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) d.startViewTransition(() => (window.location.hash = path));
+  else window.location.hash = path;
 }
 
 export function useRoute(): Route {

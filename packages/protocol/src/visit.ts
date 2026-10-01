@@ -18,6 +18,8 @@ export type Visit = {
   audio: { blobId: string; seconds: number; mime: string }[];
   findings: Finding[];
   vitals: Vitals;
+  /** Guide items the worker marked as asked by hand. */
+  asked: string[];
   draft: { model: string; needsReview: string[] } | null;
   confirmed: { at: string; by: string; recordHash: string } | null;
   amendments: { at: string; by: string; reason: string }[];
@@ -39,7 +41,7 @@ export function reduce(events: VisitEvent[]): Visit | null {
   for (const e of order(events)) {
     if (e.type === "visit.started") {
       v = {
-        id: e.visitId, ...e.payload, startedAt: e.at, notes: [], transcript: "", audio: [], findings: [], vitals: {},
+        id: e.visitId, ...e.payload, startedAt: e.at, notes: [], transcript: "", audio: [], findings: [], vitals: {}, asked: [],
         draft: null, confirmed: null, amendments: [],
       };
       continue;
@@ -57,6 +59,9 @@ export function reduce(events: VisitEvent[]): Visit | null {
         break;
       case "finding.removed":
         v.findings = v.findings.filter((f) => key(f) !== key(e.payload));
+        break;
+      case "guide.marked":
+        v.asked = e.payload.asked ? [...new Set([...v.asked, e.payload.itemId])] : v.asked.filter((x) => x !== e.payload.itemId);
         break;
       case "vitals.set":
         v.vitals = { ...v.vitals, ...e.payload };
@@ -95,10 +100,25 @@ export function flagsOf(v: Visit): Flag[] {
   return evaluate(BUNDLE.rules.rules, facts(factsOf(v)));
 }
 
-/** Visit-guide status from everything said or typed so far. */
+/** Visit-guide status from everything said or typed so far, plus items marked by hand. */
 export function guideOf(v: Visit): GuideStatus {
   const text = [...v.notes, v.transcript].join("\n");
-  return status(GUIDE, text, facts(factsOf(v)), v.firstContact, v.weeks);
+  const g = status(GUIDE, text, facts(factsOf(v)), v.firstContact, v.weeks);
+  const marked = new Set(v.asked);
+  const items = g.items.map((i) => (marked.has(i.id) ? { ...i, covered: true } : i));
+  const covered = new Set(items.filter((i) => i.covered).map((i) => i.id));
+  const follow_ups = g.follow_ups.map((f) => ({ ...f, ask: f.ask.filter((a) => !covered.has(a)) })).filter((f) => f.ask.length);
+  return { items, follow_ups };
+}
+
+/** The single most useful question to ask next: an open follow-up first, then the first
+ * uncovered item in visit order (danger signs come first in the guide). */
+export function nextQuestion(v: Visit): { itemId: string; why: string | null } | null {
+  const g = guideOf(v);
+  const fu = g.follow_ups[0];
+  if (fu) return { itemId: fu.ask[0]!, why: GUIDE.followUps.find((f) => f.id === fu.id)?.why ?? null };
+  const open = g.items.find((i) => !i.covered);
+  return open ? { itemId: open.id, why: null } : null;
 }
 
 /** The clinical content a confirmation vouches for; hashed so later edits are detectable. */

@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
-import { ErrorNote } from "../components/ui";
-import { go } from "../lib/nav";
+import { I } from "../components/icons";
+import { ErrorNote, TopBar } from "../components/ui";
 import { useLive, type Profile } from "../lib/store";
 import { getLink, pair, syncOnce, useSyncState } from "../lib/sync";
 
@@ -28,18 +28,15 @@ export function Settings({ profile }: { profile: Profile }) {
   }
   return (
     <>
-      <header class="bar">
-        <button class="icon-btn" onClick={() => go("/")} aria-label="Back to today">←</button>
-        <h1>Settings</h1>
-      </header>
-      <main class="wrap stack">
-        <section class="card stack">
-          <h2>This phone</h2>
+      <TopBar back="#/" title="Settings" />
+      <main class="page stack">
+        <section class="glass stack">
+          <div class="eyebrow">This phone</div>
           <p>{profile.worker} · {profile.facility}</p>
-          <p class="muted small">Device {profile.deviceId}</p>
+          <p class="faint tiny">Device {profile.deviceId}</p>
         </section>
-        <section class="card stack">
-          <h2>Clinic hub</h2>
+        <section class="glass stack">
+          <div class="eyebrow">Clinic hub</div>
           {link ? (
             <>
               <p>Paired with <b>{link.node}</b> ({link.facility})</p>
@@ -47,7 +44,7 @@ export function Settings({ profile }: { profile: Profile }) {
               <p class="small">{sync.pushing ? "Syncing…" : sync.at ? `Last synced ${new Date(sync.at).toLocaleTimeString("en-NG")}` : "Not synced yet"}</p>
               {sync.rejected > 0 && <p class="err">{sync.rejected} change(s) were refused by the hub. Ask your supervisor.</p>}
               <ErrorNote error={sync.error} />
-              <button class="btn" onClick={() => void syncOnce()} disabled={sync.pushing}>Sync now</button>
+              <button class="btn press" onClick={() => void syncOnce()} disabled={sync.pushing}>{sync.pushing ? "Syncing…" : "Sync now"}</button>
             </>
           ) : (
             <p class="muted">Not paired. Records stay on this phone and are safe. Pair to share them and to draft records from recordings.</p>
@@ -55,7 +52,7 @@ export function Settings({ profile }: { profile: Profile }) {
           <form class="stack" onSubmit={doPair}>
             <label class="field"><span>Hub address (shown on the hub screen)</span><input class="input" inputMode="url" value={url} onInput={(e) => setUrl((e.target as HTMLInputElement).value)} placeholder="https://hub.clinic.local:8080" /></label>
             <label class="field"><span>Pairing code</span><input class="input" value={code} autoCapitalize="characters" onInput={(e) => setCode((e.target as HTMLInputElement).value)} /></label>
-            <button class="btn primary" type="submit" disabled={busy || !url || !code}>{link ? "Pair again" : "Pair"}</button>
+            <button class="btn primary block press" type="submit" disabled={busy || !url || !code}>{busy ? "Pairing…" : link ? "Pair again" : "Pair"} <I.arrow /></button>
             <ErrorNote error={error} />
           </form>
         </section>

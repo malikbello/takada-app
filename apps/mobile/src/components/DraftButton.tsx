@@ -2,9 +2,10 @@ import { useEffect, useState } from "preact/hooks";
 import type { Visit } from "@takada/protocol";
 import { getLink, jobStatus, requestDraft, type JobStatus } from "../lib/sync";
 import { useLive } from "../lib/store";
+import { I } from "./icons";
 import { ErrorNote } from "./ui";
 
-// Ask the hub (or cloud) to draft the record from the recording and notes. Status is
+// Ask the hub (or cloud) to draft the record from the recordings and notes. Status is
 // polled and shown; failures are explained, never hidden.
 export function DraftButton({ visit }: { visit: Visit }) {
   const { data: link } = useLive(getLink);
@@ -34,16 +35,22 @@ export function DraftButton({ visit }: { visit: Visit }) {
       setError((e as Error).message);
     }
   }
-  if (!link) return <p class="muted small">Pair with the clinic hub (⚙ Settings) to draft the record from the recording.</p>;
   const busy = job?.status === "queued" || job?.status === "running";
   return (
-    <div class="stack">
-      <button class="btn primary" onClick={draft} disabled={busy || (!visit.audio.length && !visit.notes.length)}>
-        {busy ? (job?.status === "running" ? "Drafting…" : `Queued${job?.ahead ? ` · ${job.ahead} ahead` : ""}`) : visit.draft ? "Draft again" : "Draft the record"}
-      </button>
-      {job?.status === "failed" && <ErrorNote error={`Drafting failed: ${job.error ?? "unknown error"}. Tap to try again.`} />}
-      {visit.draft && <p class="pill ok">Draft ready from {visit.draft.model}. Review it before confirming.</p>}
+    <section class="glass stack">
+      <div class="row">
+        <span style={{ color: "var(--mint)", width: "22px", height: "22px", display: "inline-flex" }}><I.sparkle /></span>
+        <div class="grow"><div class="h" style={{ fontSize: "16px" }}>AI draft of the record</div>
+          <div class="muted small">{link ? "From the recordings and notes, by the N-ATLaS model at your clinic hub." : "Pair with your clinic hub in Settings to turn on AI drafting."}</div></div>
+      </div>
+      {link && (
+        <button class="btn block press" onClick={draft} disabled={busy || (!visit.audio.length && !visit.notes.length)}>
+          {busy ? (job?.status === "running" ? "Drafting…" : `In the queue${job?.ahead ? ` · ${job.ahead} ahead` : ""}`) : visit.draft ? "Draft again" : "Draft the record"}
+        </button>
+      )}
+      {job?.status === "failed" && <ErrorNote error={`Drafting failed: ${job.error ?? "unknown error"}. Try again.`} />}
+      {visit.draft && <p class="ok-note">Draft ready from {visit.draft.model}. Check it in Review before confirming.</p>}
       <ErrorNote error={error} />
-    </div>
+    </section>
   );
 }

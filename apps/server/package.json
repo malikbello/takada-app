@@ -7,7 +7,7 @@
     "start": "node --disable-warning=ExperimentalWarning dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc --noEmit && esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js --external:fastify --external:@fastify/static --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\""
+    "build": "tsc --noEmit && esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\""
   },
   "dependencies": {
     "@fastify/static": "8.2.0",

@@ -12,12 +12,11 @@ RUN --mount=type=secret,id=ca,required=false \
     if [ -f /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca COREPACK_NPM_REGISTRY=https://registry.npmjs.org; fi; \
     pnpm install --frozen-lockfile
 RUN pnpm --filter @takada/mobile build && pnpm --filter @takada/server build
-RUN pnpm --filter @takada/server deploy --prod --legacy /out
 
 FROM node:22.20-bookworm-slim
 ENV NODE_ENV=production PORT=8080 STATIC_DIR=/app/public DB_PATH=/data/takada.sqlite AUDIO_DIR=/data/audio
 WORKDIR /app
-COPY --from=build /out/node_modules ./node_modules
+# The server is one self-contained bundle (esbuild): no node_modules in the runtime image.
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /src/apps/mobile/dist ./public
 RUN mkdir -p /data && chown node:node /data
