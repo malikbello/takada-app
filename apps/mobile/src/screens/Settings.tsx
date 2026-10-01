@@ -7,7 +7,8 @@ import { getLink, pair, syncOnce, useSyncState } from "../lib/sync";
 export function Settings({ profile }: { profile: Profile }) {
   const { data: link } = useLive(getLink);
   const sync = useSyncState();
-  const [url, setUrl] = useState("");
+  // When the hub serves this app, its own address is the hub address.
+  const [url, setUrl] = useState(() => (location.port === "8080" || location.hostname.endsWith(".local") ? location.origin : ""));
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

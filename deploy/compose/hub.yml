@@ -1,0 +1,63 @@
+# Clinic hub: one command on the clinic laptop or mini-PC (ADR-0023 §3).
+#   cp deploy/compose/hub.env.example deploy/compose/hub.env   # then edit the secrets
+#   docker compose -f deploy/compose/hub.yml --env-file deploy/compose/hub.env up -d
+# Phones on the clinic Wi-Fi open https://<hub-name>.local and pair with a code from:
+#   docker compose -f deploy/compose/hub.yml exec takada node -e "..."  (see docs/operations.md)
+name: takada-hub
+
+services:
+  takada:
+    build: { context: ../.., dockerfile: deploy/server.Dockerfile }
+    image: takada-server:local
+    restart: unless-stopped
+    environment:
+      ROLE: hub
+      NODE_NAME: ${HUB_NAME:-hub-1}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in hub.env}
+      PHC_SCRIBE_URL: http://scribe:8000
+      PHC_SCRIBE_API_KEY: ${PHC_SCRIBE_API_KEY:?set PHC_SCRIBE_API_KEY in hub.env}
+      WORKERS: ${WORKERS:-1}
+    volumes: [takada-data:/data]
+    depends_on: [scribe]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  # The phc-scribe /v1 API with the offline model (llama.cpp) and N-ATLaS ASR.
+  scribe:
+    image: ${PHC_SCRIBE_IMAGE:-phc-scribe-api:local}
+    restart: unless-stopped
+    environment:
+      PHC_API_KEY_HASHES: ${PHC_SCRIBE_KEY_HASH:?set PHC_SCRIBE_KEY_HASH in hub.env}
+      PHC_EXTRACTOR: ${PHC_EXTRACTOR:-keyword}
+      PHC_LLAMACPP_URL: http://llm:8080
+      PHC_ASR: ${PHC_ASR:-off}
+      HF_HOME: /models/hf
+    volumes: [models:/models]
+    security_opt: ["no-new-privileges:true"]
+
+  # The fine-tuned N-ATLaS (GGUF) on the CPU. Enable with --profile model once the
+  # model file is in the `models` volume; until then the scribe uses its keyword extractor.
+  llm:
+    profiles: [model]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    command: ["-m", "/models/takada-anc.gguf", "--host", "0.0.0.0", "--port", "8080", "-c", "4096"]
+    volumes: [models:/models:ro]
+
+  # HTTPS on the clinic network: phones need a secure origin for the microphone and the
+  # offline app (service worker). Caddy issues the hub's certificate from its own CA;
+  # each phone trusts that CA once at enrolment (docs/operations.md).
+  proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports: ["443:443", "80:80"]
+    command: ["caddy", "reverse-proxy", "--from", "${HUB_HOSTNAME:-takada-hub.local}", "--to", "takada:8080", "--internal-certs"]
+    volumes: [caddy-data:/data]
+    depends_on: [takada]
+
+volumes:
+  takada-data:
+  models:
+  caddy-data:

@@ -4,6 +4,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { VisitEvent, verifyEvent } from "@takada/protocol";
@@ -49,7 +50,8 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
 
   const origins = cfg.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
   app.addHook("onRequest", async (req, reply) => {
-    reply.header("X-Content-Type-Options", "nosniff").header("Referrer-Policy", "no-referrer").header("Cache-Control", "no-store");
+    reply.header("X-Content-Type-Options", "nosniff").header("Referrer-Policy", "no-referrer");
+    if (req.url.startsWith("/v1/") || req.url.startsWith("/ready")) reply.header("Cache-Control", "no-store");
     const origin = req.headers.origin;
     if (origin && origins.includes(origin)) {
       reply.header("Access-Control-Allow-Origin", origin).header("Vary", "Origin")
@@ -205,6 +207,19 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     if (!v) throw new ApiError(404, "not_found", "Visit not found");
     return reply.header("Content-Type", "application/fhir+json").send(toFhir(v, { facility: req.device!.facility, node: cfg.NODE_NAME }));
   });
+
+  if (cfg.STATIC_DIR) {
+    app.register(fastifyStatic, {
+      root: cfg.STATIC_DIR,
+      prefix: "/",
+      index: ["index.html"],
+      setHeaders: (res, path) => {
+        // The service worker and app shell must revalidate; hashed assets can cache for a year.
+        res.setHeader("Cache-Control", /\/assets\//.test(path) ? "public, max-age=31536000, immutable" : "no-cache");
+        res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; frame-ancestors 'none'");
+      },
+    });
+  }
 
   return app;
 }

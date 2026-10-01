@@ -16,6 +16,8 @@ const Env = z.object({
   WORKERS: z.coerce.number().int().min(0).max(16).default(1),
   MAX_AUDIO_MB: z.coerce.number().min(1).max(200).default(25),
   CORS_ORIGINS: z.string().default(""),
+  /** The built phone app; the hub serves it so phones load it from the clinic, same origin. */
+  STATIC_DIR: z.string().optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 export type Config = z.infer<typeof Env>;

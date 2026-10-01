@@ -1,0 +1,115 @@
+# Takada server on Kubernetes (ADR-0023 §7): ready, validated in CI, not operated until a
+# pilot needs it. One replica: the server stores events in SQLite on a volume. Scaling
+# out means moving the store to Postgres first (architecture B4, a two-way door); the
+# drafting work scales separately through the phc-scribe model service.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: takada
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: takada-server, namespace: takada }
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: takada-data, namespace: takada }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: takada-server
+  namespace: takada
+  labels: { app: takada-server }
+spec:
+  serviceName: takada-server
+  replicas: 1
+  selector: { matchLabels: { app: takada-server } }
+  template:
+    metadata:
+      labels: { app: takada-server }
+    spec:
+      serviceAccountName: takada-server
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: server
+          image: ghcr.io/malikbello/takada-server:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - { name: ROLE, value: cloud }
+            - { name: NODE_NAME, value: cloud-1 }
+            - { name: PHC_SCRIBE_URL, valueFrom: { configMapKeyRef: { name: takada-config, key: PHC_SCRIBE_URL } } }
+            - { name: CORS_ORIGINS, valueFrom: { configMapKeyRef: { name: takada-config, key: CORS_ORIGINS } } }
+            - { name: ADMIN_TOKEN, valueFrom: { secretKeyRef: { name: takada-secrets, key: ADMIN_TOKEN } } }
+            - { name: PHC_SCRIBE_API_KEY, valueFrom: { secretKeyRef: { name: takada-secrets, key: PHC_SCRIBE_API_KEY } } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: takada-data } }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: takada-config, namespace: takada }
+data:
+  PHC_SCRIBE_URL: "http://phc-scribe.takada.svc.cluster.local:8000"
+  CORS_ORIGINS: "https://app.takada.health"
+---
+apiVersion: v1
+kind: Service
+metadata: { name: takada-server, namespace: takada }
+spec:
+  selector: { app: takada-server }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: takada-server, namespace: takada }
+spec:
+  podSelector: { matchLabels: { app: takada-server } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports: [{ port: 8080 }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: phc-scribe } } }]
+      ports: [{ port: 8000 }]
+    - to: [{ namespaceSelector: {} }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: takada-server, namespace: takada }
+spec:
+  maxUnavailable: 0
+  selector: { matchLabels: { app: takada-server } }

@@ -8,3 +8,4 @@ coverage/
 *.sqlite-*
 data/
 .DS_Store
+deploy/compose/hub.env
