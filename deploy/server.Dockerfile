@@ -13,15 +13,19 @@ RUN --mount=type=secret,id=ca,required=false \
     pnpm install --frozen-lockfile
 RUN pnpm --filter @takada/mobile build && pnpm --filter @takada/server build
 
-FROM node:22.20-bookworm-slim
+# Runtime: distroless Node 22 (no shell, no npm, no package manager, non-root). Only the
+# self-contained server bundle and the built phone app are copied in.
+FROM build AS datadir
+RUN mkdir -p /data-empty
+
+FROM gcr.io/distroless/nodejs22-debian13:nonroot
 ENV NODE_ENV=production PORT=8080 STATIC_DIR=/app/public DB_PATH=/data/takada.sqlite AUDIO_DIR=/data/audio
 WORKDIR /app
-# The server is one self-contained bundle (esbuild): no node_modules in the runtime image.
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /src/apps/mobile/dist ./public
-RUN mkdir -p /data && chown node:node /data
-USER node
+COPY --from=datadir --chown=nonroot:nonroot /data-empty /data
+USER nonroot
 VOLUME ["/data"]
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-CMD ["node", "--disable-warning=ExperimentalWarning", "dist/main.js"]
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+CMD ["--disable-warning=ExperimentalWarning", "dist/main.js"]
