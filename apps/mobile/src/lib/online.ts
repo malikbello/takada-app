@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 
 export function useOnline(): boolean {
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);

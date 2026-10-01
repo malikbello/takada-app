@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 
 // Tiny hash router: #/ (today), #/visit/<id>, #/review/<id>, #/setup.
 export type Route = { name: "today" } | { name: "visit"; id: string } | { name: "review"; id: string } | { name: "setup" } | { name: "settings" };
@@ -12,10 +12,7 @@ export function parse(hash: string): Route {
 }
 
 export function go(path: string): void {
-  // Native-feeling page transitions where supported (View Transitions API).
-  const d = document as Document & { startViewTransition?: (cb: () => void) => unknown };
-  if (d.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) d.startViewTransition(() => (window.location.hash = path));
-  else window.location.hash = path;
+  window.location.hash = path;
 }
 
 export function useRoute(): Route {

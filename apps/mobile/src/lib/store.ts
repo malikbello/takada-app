@@ -1,5 +1,5 @@
 import { liveQuery } from "dexie";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 import { makeEvent, reduce, type Visit, type VisitEvent } from "@takada/protocol";
 import { db } from "./db";
 

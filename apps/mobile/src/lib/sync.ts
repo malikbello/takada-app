@@ -2,7 +2,7 @@
 // what other devices and the drafting service wrote. Every failure is recorded and shown
 // in the app; nothing is deleted from the phone because of a sync.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 import { VisitEvent } from "@takada/protocol";
 import { db } from "./db";
 

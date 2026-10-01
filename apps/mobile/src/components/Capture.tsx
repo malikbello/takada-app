@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { AnimatePresence, m } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { CONCEPTS } from "@takada/clinical";
 import type { Visit, Vitals } from "@takada/protocol";
 import { db } from "../lib/db";
+import { ease, spring } from "../lib/motion";
 import { append, type Profile } from "../lib/store";
 import { toWav16k } from "../lib/wav";
 import { I } from "./icons";
-import { ErrorNote } from "./ui";
+import { Disclosure, ErrorNote } from "./ui";
 
 type Props = { visit: Visit; profile: Profile };
-
 const who = (v: Visit, p: Profile) => ({ visitId: v.id, deviceId: p.deviceId, worker: p.worker });
 
 /** The record orb. Audio stays on the phone (as 16 kHz WAV) until the hub or cloud drafts it. */
@@ -20,7 +21,6 @@ export function Recorder({ visit, profile }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const t0 = useRef(0);
   const raf = useRef(0);
-
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
   function drawWave(stream: MediaStream) {
@@ -36,14 +36,17 @@ export function Recorder({ visit, profile }: Props) {
         const w = (c.width = c.clientWidth * devicePixelRatio), h = (c.height = c.clientHeight * devicePixelRatio);
         an.getByteTimeDomainData(data);
         g.clearRect(0, 0, w, h);
-        const bars = 48, bw = w / bars;
-        g.fillStyle = getComputedStyle(c).color;
+        const bars = 40, bw = w / bars;
+        const grad = g.createLinearGradient(0, 0, w, 0);
+        grad.addColorStop(0, "#FFB199");
+        grad.addColorStop(0.5, "#F07AA0");
+        grad.addColorStop(1, "#7B4CC2");
+        g.fillStyle = grad;
         for (let i = 0; i < bars; i++) {
           const v = Math.abs((data[Math.floor((i / bars) * data.length)] ?? 128) - 128) / 128;
-          const bh = Math.max(3 * devicePixelRatio, v * h * 1.8);
-          g.globalAlpha = 0.35 + v * 1.3;
+          const bh = Math.max(4 * devicePixelRatio, v * h * 2.2);
           g.beginPath();
-          g.roundRect(i * bw + bw * 0.25, (h - bh) / 2, bw * 0.5, bh, bw * 0.25);
+          g.roundRect(i * bw + bw * 0.28, (h - bh) / 2, bw * 0.44, bh, bw * 0.22);
           g.fill();
         }
       }
@@ -94,26 +97,34 @@ export function Recorder({ visit, profile }: Props) {
 
   const total = visit.audio.reduce((n, a) => n + a.seconds, 0);
   return (
-    <section class="glass center stack">
-      <div class="orb-wrap">
-        <button class={`orb ${rec ? "live" : ""}`} onClick={() => (rec ? rec.stop() : start())} disabled={saving} aria-label={rec ? "Stop recording" : "Start recording"}>
-          {rec ? <I.stop /> : <I.mic />}
-        </button>
+    <section className="card center" style={{ background: "var(--brand-soft)", borderColor: "transparent", paddingTop: 26 }}>
+      <div style={{ display: "grid", placeItems: "center" }}>
+        <m.button className={`orb ${rec ? "live" : ""}`} onClick={() => (rec ? rec.stop() : start())} disabled={saving}
+          aria-label={rec ? "Stop recording" : "Start recording"} whileTap={{ scale: 0.92 }} layout transition={spring}>
+          <span className="halo" aria-hidden="true" />
+          <AnimatePresence mode="wait" initial={false}>
+            <m.span key={rec ? "stop" : "mic"} initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }} transition={spring} style={{ display: "grid" }}>
+              {rec ? <I.stop /> : <I.mic />}
+            </m.span>
+          </AnimatePresence>
+        </m.button>
       </div>
-      {rec ? (
-        <>
-          <div class="timer" aria-live="polite">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</div>
-          <canvas ref={canvas} class="wave" style={{ color: "var(--rose)" }} aria-hidden="true" />
-          <p class="muted small">Listening. Talk with her as usual. Tap to stop.</p>
-        </>
-      ) : (
-        <div>
-          <div class="h">{saving ? "Saving…" : visit.audio.length ? "Record more" : "Tap to record the visit"}</div>
-          <p class="muted small" style={{ margin: "4px 0 0" }}>
-            {visit.audio.length ? `${visit.audio.length} recording${visit.audio.length > 1 ? "s" : ""} · ${Math.floor(total / 60)}m ${total % 60}s, safe on this phone` : "Yorùbá, Pidgin or English. Works offline."}
-          </p>
-        </div>
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        {rec ? (
+          <m.div key="live" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease }} style={{ marginTop: 16 }}>
+            <div className="timer" aria-live="polite">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</div>
+            <canvas ref={canvas} className="wave" aria-hidden="true" />
+            <p className="muted small" style={{ margin: "6px 0 0" }}>Listening. Talk with her as usual.</p>
+          </m.div>
+        ) : (
+          <m.div key="idle" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease }} style={{ marginTop: 18 }}>
+            <div className="h" style={{ fontSize: 19 }}>{saving ? "Saving…" : visit.audio.length ? "Record more" : "Tap to record the visit"}</div>
+            <p className="muted small" style={{ margin: "4px 0 0" }}>
+              {visit.audio.length ? `${visit.audio.length} recording${visit.audio.length > 1 ? "s" : ""} · ${Math.floor(total / 60)}m ${total % 60}s, safe on this phone` : "Yorùbá, Pidgin or English · works offline"}
+            </p>
+          </m.div>
+        )}
+      </AnimatePresence>
       <ErrorNote error={error} />
     </section>
   );
@@ -132,16 +143,17 @@ export function DangerTiles({ visit, profile }: Props) {
     }
   }
   return (
-    <details class="glass">
-      <summary><span style={{ color: "var(--rose)", width: "22px", height: "22px", display: "inline-flex" }}><I.alert /></span> Danger signs {on.size ? <span class="pill">{on.size} marked</span> : null}<span class="chev"><I.chev /></span></summary>
-      <p class="muted small">Tap any sign you see or she reports. Takada alerts at once.</p>
-      <div class="tiles">
-        {CONCEPTS.filter((c) => c.danger_sign).map((c) => (
-          <button key={c.id} class="tile" aria-pressed={on.has(c.id)} onClick={() => toggle(c.id)} title={c.definition}>{c.label_en}</button>
+    <Disclosure icon={<I.alert />} tint={["var(--danger-bg)", "var(--danger)"]} title="Danger signs" meta={on.size ? `${on.size} marked` : "Tap any she has"}>
+      <div className="tiles">
+        {CONCEPTS.filter((c) => c.danger_sign).map((c, i) => (
+          <m.button key={c.id} className="tile" aria-pressed={on.has(c.id)} onClick={() => toggle(c.id)} title={c.definition}
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.025, duration: 0.3, ease }} whileTap={{ scale: 0.95 }}>
+            {c.label_en}
+          </m.button>
         ))}
       </div>
       <ErrorNote error={error} />
-    </details>
+    </Disclosure>
   );
 }
 
@@ -181,19 +193,20 @@ export function VitalsForm({ visit, profile }: Props) {
   }
   const summary = [v.bp_systolic && `BP ${v.bp_systolic}/${v.bp_diastolic}`, v.temperature_c && `${v.temperature_c}°C`, v.weight_kg && `${v.weight_kg} kg`, v.pulse && `${v.pulse}/min`].filter(Boolean).join(" · ");
   return (
-    <details class="glass">
-      <summary><span style={{ color: "var(--sky)", width: "22px", height: "22px", display: "inline-flex" }}><I.pulse /></span> Measurements {summary ? <span class="faint small" style={{ fontWeight: 500 }}>{summary}</span> : null}<span class="chev"><I.chev /></span></summary>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "12px" }}>
+    <Disclosure icon={<I.pulse />} tint={["#e8f3fb", "#1f6f9f"]} title="Measurements" meta={summary || "BP, temperature, weight"}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {FIELDS.map((f) => (
-          <label class="field" key={f.key}><span>{f.label} <span class="faint">{f.unit}</span></span>
-            <input class="input" inputMode="decimal" type="number" step={f.step ?? "1"} placeholder={v[f.key] !== undefined ? String(v[f.key]) : ""} value={vals[f.key] ?? ""}
-              onInput={(e) => setVals({ ...vals, [f.key]: (e.target as HTMLInputElement).value })} />
+          <label className="field" key={f.key}><span>{f.label} <span className="faint">{f.unit}</span></span>
+            <input className="input" inputMode="decimal" type="number" step={f.step ?? "1"} placeholder={v[f.key] !== undefined ? String(v[f.key]) : ""} value={vals[f.key] ?? ""}
+              onChange={(e) => setVals({ ...vals, [f.key]: e.target.value })} />
           </label>
         ))}
       </div>
-      <button class={`btn block press ${saved ? "" : "primary"}`} style={{ marginTop: "12px" }} onClick={save}>{saved ? <><I.check /> Saved</> : "Save measurements"}</button>
+      <m.button className={`btn block ${saved ? "soft" : "primary"}`} style={{ marginTop: 12 }} onClick={save} whileTap={{ scale: 0.97 }}>
+        {saved ? <><I.check /> Saved</> : "Save measurements"}
+      </m.button>
       <ErrorNote error={error} />
-    </details>
+    </Disclosure>
   );
 }
 
@@ -210,14 +223,17 @@ export function Notes({ visit, profile }: Props) {
     }
   }
   return (
-    <details class="glass" open={visit.notes.length > 0}>
-      <summary><span style={{ color: "var(--amber)", width: "22px", height: "22px", display: "inline-flex" }}><I.note /></span> Notes {visit.notes.length ? <span class="pill">{visit.notes.length}</span> : null}<span class="chev"><I.chev /></span></summary>
-      {visit.notes.map((n, i) => <p key={i} class="small muted" style={{ margin: "8px 0" }}>{n}</p>)}
-      <label class="field" style={{ marginTop: "10px" }}><span class="sr-only">Add a note</span>
-        <textarea class="input" aria-label="Notes" value={text} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} placeholder="Type, or use the keyboard's microphone…" />
+    <Disclosure icon={<I.note />} tint={["var(--honey-bg)", "var(--honey)"]} title="Notes" meta={visit.notes.length ? `${visit.notes.length} note${visit.notes.length > 1 ? "s" : ""}` : "Type or dictate"} defaultOpen={visit.notes.length > 0}>
+      <AnimatePresence initial={false}>
+        {visit.notes.map((n, i) => (
+          <m.p key={i} className="small" style={{ margin: "0 0 10px", padding: "10px 12px", background: "var(--cream)", borderRadius: 12 }} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>{n}</m.p>
+        ))}
+      </AnimatePresence>
+      <label className="field"><span className="sr-only">Add a note</span>
+        <textarea className="input" aria-label="Notes" value={text} onChange={(e) => setText(e.target.value)} placeholder="Type, or use the keyboard's microphone…" />
       </label>
-      <button class="btn block press" style={{ marginTop: "10px" }} onClick={add} disabled={!text.trim()}>Add note</button>
+      <m.button className="btn soft block" style={{ marginTop: 10 }} onClick={add} disabled={!text.trim()} whileTap={{ scale: 0.97 }}>Add note</m.button>
       <ErrorNote error={error} />
-    </details>
+    </Disclosure>
   );
 }
