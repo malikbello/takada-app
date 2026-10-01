@@ -7,7 +7,9 @@ import { getProfile, type Profile } from "./lib/store";
 import { Review } from "./screens/Review";
 import { Setup } from "./screens/Setup";
 import { Today } from "./screens/Today";
+import { Settings } from "./screens/Settings";
 import { VisitScreen } from "./screens/VisitScreen";
+import { startSync } from "./lib/sync";
 import "./styles.css";
 
 registerSW({ immediate: true });
@@ -22,12 +24,14 @@ function App() {
   const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     getProfile().then(setProfile).catch(setError);
+    return startSync();
   }, []);
   if (error) return <main class="wrap"><ErrorNote error={`Storage is unavailable on this phone: ${error.message}`} /></main>;
   if (profile === undefined) return <main class="wrap muted">Loading…</main>;
   if (profile === null || route.name === "setup") return <Setup onDone={setProfile} />;
   if (route.name === "visit") return <VisitScreen id={route.id} profile={profile} />;
   if (route.name === "review") return <Review id={route.id} profile={profile} />;
+  if (route.name === "settings") return <Settings profile={profile} />;
   return <Today profile={profile} />;
 }
 

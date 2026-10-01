@@ -3,6 +3,7 @@ import { CONCEPTS } from "@takada/clinical";
 import type { Visit, Vitals } from "@takada/protocol";
 import { db } from "../lib/db";
 import { append, type Profile } from "../lib/store";
+import { toWav16k } from "../lib/wav";
 import { ErrorNote } from "./ui";
 
 type Props = { visit: Visit; profile: Profile };
@@ -27,11 +28,13 @@ export function Recorder({ visit, profile }: Props) {
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         clearInterval(timer.current);
-        const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+        const raw = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
         const id = crypto.randomUUID();
         try {
-          await db.blobs.put({ id, visitId: visit.id, blob, createdAt: new Date().toISOString(), uploaded: 0 });
-          await append({ ...who(visit, profile), type: "audio.captured", payload: { blobId: id, seconds: Math.round((Date.now() - t0.current) / 1000), mime: blob.type } });
+          // 16 kHz mono WAV, ready for N-ATLaS speech recognition on the hub or cloud.
+          const { wav, seconds } = await toWav16k(raw);
+          await db.blobs.put({ id, visitId: visit.id, blob: wav, createdAt: new Date().toISOString(), uploaded: 0 });
+          await append({ ...who(visit, profile), type: "audio.captured", payload: { blobId: id, seconds: Math.round(seconds), mime: "audio/wav" } });
         } catch (e) {
           setError(`Recording could not be saved: ${(e as Error).message}`);
         }

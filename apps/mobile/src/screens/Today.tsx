@@ -4,17 +4,22 @@ import { ErrorNote, Sheet } from "../components/ui";
 import { go } from "../lib/nav";
 import { useOnline } from "../lib/online";
 import { allVisits, append, pendingCount, useLive, type Profile } from "../lib/store";
+import { useSyncState } from "../lib/sync";
 
 export function Today({ profile }: { profile: Profile }) {
   const { data: visits, error } = useLive(allVisits);
   const { data: pending } = useLive(pendingCount);
   const online = useOnline();
+  const sync = useSyncState();
   const [starting, setStarting] = useState(false);
   return (
     <>
       <header class="bar">
         <h1>Takada</h1>
-        <span class={`pill ${online ? "ok" : "warn"}`} role="status">{online ? "Online" : "Offline"}{pending ? ` · ${pending} to sync` : ""}</span>
+        <a href="#/settings" class={`pill ${sync.error ? "danger" : online ? "ok" : "warn"}`} role="status" style={{ textDecoration: "none" }}>
+          {sync.pushing ? "Syncing…" : online ? "Online" : "Offline"}{pending ? ` · ${pending} to sync` : ""}{sync.error ? " · sync problem" : ""}
+        </a>
+        <a href="#/settings" class="icon-btn" aria-label="Settings" style={{ display: "grid", placeItems: "center", textDecoration: "none" }}>⚙</a>
       </header>
       <main class="wrap stack">
         <p class="muted">{profile.worker} · {profile.facility}</p>

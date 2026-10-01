@@ -44,3 +44,18 @@ describe("on-device store", () => {
     expect(await db.events.count()).toBe(0);
   });
 });
+
+import { encodeWav } from "../src/lib/wav";
+
+describe("wav", () => {
+  it("writes a valid 16-bit mono PCM header and clamps samples", async () => {
+    const b = encodeWav(new Float32Array([0, 1, -1, 2]), 16000);
+    const v = new DataView(await b.arrayBuffer());
+    const s = (o: number) => String.fromCharCode(...new Uint8Array(v.buffer, o, 4));
+    expect([s(0), s(8), s(12), s(36)]).toEqual(["RIFF", "WAVE", "fmt ", "data"]);
+    expect(v.getUint32(24, true)).toBe(16000);
+    expect(v.getUint16(34, true)).toBe(16);
+    expect(v.getUint32(40, true)).toBe(8);
+    expect([v.getInt16(46, true), v.getInt16(48, true), v.getInt16(50, true)]).toEqual([32767, -32768, 32767]);
+  });
+});

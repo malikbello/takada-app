@@ -2,6 +2,7 @@ import { useState } from "preact/hooks";
 import { flagsOf, reduce } from "@takada/protocol";
 import { DangerChips, Notes, Recorder, VitalsForm } from "../components/Capture";
 import { DangerBanner } from "../components/DangerBanner";
+import { DraftButton } from "../components/DraftButton";
 import { GuidePanel } from "../components/GuidePanel";
 import { ErrorNote, Sheet } from "../components/ui";
 import { go } from "../lib/nav";
@@ -34,6 +35,7 @@ export function VisitScreen({ id, profile }: { id: string; profile: Profile }) {
         {tab === "record" ? (
           <>
             <Recorder visit={visit} profile={profile} />
+            <DraftButton visit={visit} />
             <DangerChips visit={visit} profile={profile} />
             <VitalsForm visit={visit} profile={profile} />
             <Notes visit={visit} profile={profile} />
