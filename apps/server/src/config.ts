@@ -14,7 +14,7 @@ const Env = z.object({
   PHC_SCRIBE_PROXY_KEY: z.string().optional(),
   PHC_SCRIBE_PROXY_SECRET: z.string().optional(),
   WORKERS: z.coerce.number().int().min(0).max(16).default(1),
-  MAX_AUDIO_MB: z.coerce.number().min(1).max(200).default(25),
+  MAX_AUDIO_MB: z.coerce.number().min(1).max(200).default(60), // about 31 minutes of 16 kHz mono
   CORS_ORIGINS: z.string().default(""),
   /** The built phone app; the hub serves it so phones load it from the clinic, same origin. */
   STATIC_DIR: z.string().optional(),

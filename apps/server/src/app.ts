@@ -12,6 +12,15 @@ import { deviceForToken, newPairingCode, newToken, safeEqual, sha256, type Devic
 import type { Config } from "./config";
 import { toFhir } from "./fhir";
 import { claimVisit, insertEvent, priorityOf, visit, visitFacility } from "./store";
+import { readFormat } from "./wav";
+
+function isPcmWav(b: Buffer): boolean {
+  try {
+    return readFormat(b).dataLength > 0;
+  } catch {
+    return false;
+  }
+}
 
 class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -171,8 +180,8 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     const { visitId, id } = z.object({ visitId: z.string().uuid(), id: z.string().uuid() }).parse(req.params);
     ownVisit(req, visitId);
     const body = req.body;
-    if (!Buffer.isBuffer(body) || body.length < 44 || body.subarray(0, 4).toString("latin1") !== "RIFF" || body.subarray(8, 12).toString("latin1") !== "WAVE") {
-      throw new ApiError(415, "not_wav", "Send the recording as WAV (Content-Type: audio/wav)");
+    if (!Buffer.isBuffer(body) || !isPcmWav(body)) {
+      throw new ApiError(415, "not_wav", "Send the recording as PCM WAV (Content-Type: audio/wav)");
     }
     const dir = join(cfg.AUDIO_DIR, visitId);
     mkdirSync(dir, { recursive: true });

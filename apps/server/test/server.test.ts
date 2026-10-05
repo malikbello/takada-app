@@ -8,6 +8,7 @@ import { loadConfig } from "../src/config";
 import { openDb } from "../src/db";
 import { claimNext, runJob } from "../src/queue";
 import { UpstreamError, type Scribe } from "../src/upstream";
+import { pcmWav } from "./helpers";
 
 const ADMIN = "admin-token-for-tests-0123456789";
 let db: ReturnType<typeof openDb>;
@@ -96,9 +97,11 @@ describe("drafting queue", () => {
     await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
     const audioId = crypto.randomUUID();
     expect((await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${audioId}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: Buffer.from("not a wav file at all, not even close to it..") })).statusCode).toBe(415);
-    const wav = Buffer.alloc(64);
-    wav.write("RIFF", 0, "latin1");
-    wav.write("WAVE", 8, "latin1");
+    const header = Buffer.alloc(64);
+    header.write("RIFF", 0, "latin1");
+    header.write("WAVE", 8, "latin1");
+    expect((await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${audioId}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: header })).statusCode).toBe(415); // no audio in it
+    const wav = pcmWav(3);
     expect((await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${audioId}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: wav })).statusCode).toBe(200);
     const job = (await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId, language: "pcm", audioIds: [audioId] } })).json();
     expect(job.status).toBe("queued");
@@ -111,6 +114,27 @@ describe("drafting queue", () => {
     expect(status.status).toBe("done");
     const pulled = (await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(p.token) })).json().events;
     expect(pulled.at(-1).type).toBe("draft.received");
+  });
+
+  it("transcribes a long recording in segments the speech API accepts", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    const visitId = ev[0]!.visitId;
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
+    const audioId = crypto.randomUUID();
+    const put = await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${audioId}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: pcmWav(600) });
+    expect(put.statusCode).toBe(200);
+    await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId, language: "yo", audioIds: [audioId] } });
+    const sizes: number[] = [];
+    let seen = "";
+    const scribe = fake({
+      transcribe: async (wav) => (sizes.push(wav.length), `part${sizes.length}`),
+      extract: async (text) => ((seen = text), { findings: [], vitals: {}, model: "m", needsReview: [] }),
+    });
+    await runJob(db, scribe, claimNext(db)!, "hub-1");
+    expect(sizes).toHaveLength(3);
+    expect(Math.max(...sizes)).toBeLessThan(10_000_000);
+    expect(seen).toContain("part1 part2 part3");
   });
 
   it("retries transient failures with backoff, then fails with a visible error", async () => {

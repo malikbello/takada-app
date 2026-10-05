@@ -7,8 +7,11 @@ import type { DatabaseSync } from "node:sqlite";
 import { makeEvent } from "@takada/protocol";
 import { insertEvent, visit } from "./store";
 import { UpstreamError, type Scribe } from "./upstream";
+import { splitWav } from "./wav";
 
 const MAX_ATTEMPTS = 3;
+// Under phc-scribe's 10 MB request limit (16 kHz mono 16-bit: 4 min is 7.7 MB).
+export const SEGMENT_SECONDS = 240;
 
 type JobRow = { id: string; visit_id: string; facility: string; language: string; audio_ids: string; attempts: number };
 
@@ -37,7 +40,16 @@ export async function runJob(db: DatabaseSync, scribe: Scribe, job: JobRow, node
     for (const id of JSON.parse(job.audio_ids) as string[]) {
       const a = db.prepare("SELECT path FROM audio WHERE id = ? AND visit_id = ?").get(id, job.visit_id) as { path: string } | undefined;
       if (!a) throw new UpstreamError("audio_missing", `audio ${id} has not been uploaded yet`, true);
-      parts.push(await scribe.transcribe(readFileSync(a.path), job.language));
+      // The speech API takes about 5 minutes per request; a visit can be longer.
+      let segments: Buffer[];
+      try {
+        segments = splitWav(readFileSync(a.path), SEGMENT_SECONDS);
+      } catch (e) {
+        throw new UpstreamError("audio_invalid", `audio ${id}: ${(e as Error).message}`, false);
+      }
+      const texts: string[] = [];
+      for (const seg of segments) texts.push(await scribe.transcribe(seg, job.language));
+      parts.push(texts.join(" ").trim());
     }
     const transcript = [...parts, ...v.notes].join("\n").trim();
     if (!transcript) throw new UpstreamError("nothing_to_draft", "no recording or notes for this visit", false);
