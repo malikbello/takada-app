@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tákàdá</string>
+    <string name="title_activity_main">Tákàdá</string>
+    <string name="package_name">dev.malikbello.takada</string>
+    <string name="custom_url_scheme">dev.malikbello.takada</string>
+</resources>

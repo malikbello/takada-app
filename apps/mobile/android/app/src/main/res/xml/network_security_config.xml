@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ADR-0027: HTTPS only. Besides the system CAs, trust CAs the user installed, because each
+     clinic hub signs its certificate with its own CA, which the phone trusts once at enrolment
+     (takada-app docs/operations.md). Replaced by per-hub pinning at pairing (ADR-0027 phase 2). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

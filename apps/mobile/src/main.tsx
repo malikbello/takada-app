@@ -8,6 +8,7 @@ import { useRoute } from "./lib/nav";
 import { getProfile, type Profile } from "./lib/store";
 import { startSync } from "./lib/sync";
 import { applyEffects } from "./lib/effects";
+import { isNative, startNative } from "./lib/platform";
 import { Review } from "./screens/Review";
 import { Settings } from "./screens/Settings";
 import { Today } from "./screens/Today";
@@ -15,7 +16,9 @@ import { VisitScreen } from "./screens/VisitScreen";
 import { Welcome } from "./screens/Welcome";
 import "./styles.css";
 
-registerSW({ immediate: true });
+// The web app installs a service worker for offline use; the native apps carry their files.
+if (!isNative) registerSW({ immediate: true });
+void startNative();
 applyEffects();
 // The phone is the only copy of a record until it syncs: ask the browser to keep our data.
 navigator.storage?.persist?.().catch(() => undefined);
