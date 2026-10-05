@@ -61,7 +61,12 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
 **Steps:**
 1. Install Docker (Windows: Docker Desktop with WSL2).
 2. `cp deploy/compose/hub.env.example deploy/compose/hub.env`, then fill it in. Generate each secret with `openssl rand -base64 32`; never reuse them across clinics.
-3. Build the phc-scribe API image from the `phc-scribe` repo, tagged `phc-scribe-api:local`. Copy the models into the `models` volume: the ASR models and `takada-anc.gguf`. This is a one-time download while online; after that, nothing needs the internet.
+3. Build the phc-scribe API image from the `phc-scribe` repo, tagged `phc-scribe-api:local`. Copy the models into the `models` volume, once, while online:
+   - `asr-ft/yo` and `asr-ft/pcm`: the fine-tuned N-ATLaS ASR (ADR-0026);
+   - the Hugging Face cache of `NCAIR1/NigerianAccentedEnglish` (for English) under `hf/`;
+   - `takada-anc.gguf`: the fine-tuned N-ATLaS, when ready.
+
+   The hub runs with `HF_HUB_OFFLINE=1`, so a missing model fails loudly instead of downloading.
 4. Start the hub. Without `--profile model`, the hub uses the keyword extractor:
    ```bash
    docker compose -f deploy/compose/hub.yml --env-file deploy/compose/hub.env --profile model up -d

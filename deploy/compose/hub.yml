@@ -33,6 +33,9 @@ services:
       PHC_EXTRACTOR: ${PHC_EXTRACTOR:-keyword}
       PHC_LLAMACPP_URL: http://llm:8080
       PHC_ASR: ${PHC_ASR:-off}
+      PHC_ASR_MODELS: ${PHC_ASR_MODELS:-}
+      # Never reach the internet for models: everything comes from the models volume.
+      HF_HUB_OFFLINE: "1"
       HF_HOME: /models/hf
     volumes: [models:/models]
     security_opt: ["no-new-privileges:true"]
