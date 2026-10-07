@@ -69,6 +69,36 @@ describe("visit state", () => {
     const amend = await makeEvent({ ...who, at: at(), type: "record.amended", payload: { amends: confirm.id, reason: "BP re-measured" } });
     expect(reduce([...ev, confirm, amend])?.confirmed).toBeNull();
   });
+
+  it("replaces the previous draft when the record is drafted again", async () => {
+    const ev = await visit();
+    const draft = async (findings: { concept: string; assertion: "present" | "absent" }[], weight: number) =>
+      makeEvent({ ...who, at: at(), type: "draft.received", payload: {
+        transcript: "x", model: "natlas-ft", needsReview: [], vitals: { weight_kg: weight },
+        findings: findings.map((f) => ({ ...f, origin: "model" as const })),
+      } });
+    ev.push(await draft([{ concept: "fever", assertion: "present" }, { concept: "blurred_vision", assertion: "present" }], 70));
+    ev.push(await draft([{ concept: "fever", assertion: "absent" }], 72));
+    const v = reduce(ev)!;
+    const model = v.findings.filter((f) => f.origin === "model");
+    expect(model).toEqual([{ concept: "fever", assertion: "absent", origin: "model" }]);
+    expect(v.vitals.weight_kg).toBe(72);
+    expect(v.vitals.bp_systolic).toBe(165); // the worker's typed vitals survive every draft
+    expect(v.findings.some((f) => f.origin === "worker" && f.concept === "severe_headache")).toBe(true);
+  });
+
+  it("lets the worker override the model after the draft arrived", async () => {
+    const ev = await visit();
+    ev.push(await makeEvent({ ...who, at: at(), type: "draft.received", payload: {
+      transcript: "x", model: "natlas-ft", needsReview: [], vitals: { weight_kg: 70 },
+      findings: [{ concept: "vaginal_bleeding", assertion: "absent", origin: "model" }],
+    } }));
+    ev.push(await makeEvent({ ...who, at: at(), type: "finding.set", payload: { concept: "vaginal_bleeding", assertion: "present", origin: "worker" } }));
+    ev.push(await makeEvent({ ...who, at: at(), type: "vitals.set", payload: { weight_kg: 68 } }));
+    const v = reduce(ev)!;
+    expect(v.findings.filter((f) => f.concept === "vaginal_bleeding")).toEqual([{ concept: "vaginal_bleeding", assertion: "present", origin: "worker" }]);
+    expect(v.vitals.weight_kg).toBe(68);
+  });
 });
 
 describe("ordering", () => {
