@@ -17,6 +17,10 @@ services:
       PHC_SCRIBE_URL: http://scribe:8000
       PHC_SCRIBE_API_KEY: ${PHC_SCRIBE_API_KEY:?set PHC_SCRIBE_API_KEY in hub.env}
       WORKERS: ${WORKERS:-1}
+      # The Android and iPhone apps run at https://localhost and capacitor://localhost
+      # (apps/mobile/capacitor.config.ts), a different origin from the hub, so the hub must
+      # allow them; the web app, served by the hub itself, needs nothing.
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost,capacitor://localhost}
     volumes: [takada-data:/data]
     depends_on: [scribe]
     read_only: true

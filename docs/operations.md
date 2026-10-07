@@ -84,6 +84,13 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
    Without `--profile model` (and with `PHC_EXTRACTOR=keyword`), the hub drafts with the keyword extractor only.
 6. Check it: `curl -k https://takada-hub.local/readyz` should return `{"ok":true,...}`.
 
+**The hub's name must resolve on the clinic network: check this in the dry run, on the pilot phones.** Nothing in the compose file announces `takada-hub.local`; a phone finds it only if something answers for that name. Pick one before the pilot:
+- **Laptop hotspot (simplest).** Windows Mobile Hotspot always gives the laptop `192.168.137.1`. Set `HUB_HOSTNAME=192.168.137.1` in `hub.env`: Caddy then issues the certificate for that address, and phones use `https://192.168.137.1`. No name resolution involved.
+- **The laptop's own name.** Windows 10/11 and macOS answer for `<computer-name>.local` by themselves. Set `HUB_HOSTNAME` to that name. Android resolves `.local` names from Android 12; older phones do not, so use the address instead for them.
+- **A router with local DNS.** Add `takada-hub.local` → the hub's fixed address.
+
+Test from a pilot phone, on the clinic Wi-Fi, before the day: open `https://<HUB_HOSTNAME>/healthz` in Chrome. It must show `{"ok":true,...}` with no certificate warning (after the CA is installed, below).
+
 **Why HTTPS on a local network.** Phones only allow the microphone and offline mode on a secure origin. The hub's proxy (Caddy) issues the hub's certificate from its own small certificate authority.
 - Each phone trusts that authority **once**, at enrolment: Android Settings → Security → Install a certificate (the Android app trusts it too, ADR-0027); iPhone: install the profile, then Settings → General → About → Certificate Trust Settings.
 - The root certificate is in the `caddy-data` volume, at `pki/authorities/local/root.crt`.
@@ -97,7 +104,8 @@ curl -sk -X POST https://takada-hub.local/v1/admin/pairing-codes \
   -d '{"facility": "<HFR code>", "ttlMinutes": 30}'
 ```
 On the phone: Takada → ⚙ Settings → hub address + the 8-character code.
-- Codes work once and expire.
+- Codes work once and expire. After 10 wrong codes from one address, pairing pauses for 10 minutes.
+- The visit's facility is the one in the pairing code: after pairing, the phone shows and uses that name, whatever was typed at onboarding. Visits started before pairing are accepted under it too.
 - A lost phone is cut off at once: `POST /v1/admin/devices/<deviceId>/revoke`.
 
 ## Health, monitoring and backups
