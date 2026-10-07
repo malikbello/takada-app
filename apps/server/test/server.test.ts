@@ -6,7 +6,7 @@ import { makeEvent, type VisitEvent } from "@takada/protocol";
 import { buildApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import { openDb } from "../src/db";
-import { claimNext, runJob } from "../src/queue";
+import { claimNext, EXTRACT_CHARS, mergeDrafts, runJob, splitText } from "../src/queue";
 import { UpstreamError, type Scribe } from "../src/upstream";
 import { pcmWav } from "./helpers";
 
@@ -54,6 +54,16 @@ describe("pairing and auth", () => {
     expect((await app.inject({ method: "POST", url: "/v1/admin/pairing-codes", headers: auth("nope"), payload: { facility: "X" } })).statusCode).toBe(401);
   });
 
+  it("slows down guessing of pairing codes", async () => {
+    const codes = [];
+    const from = (ip: string) => ({ "x-forwarded-for": ip });
+    for (let i = 0; i < 21; i++) codes.push((await app.inject({ method: "POST", url: "/v1/pair", headers: from("10.0.0.7"), payload: { code: "WRONGCODE", deviceId: "x", worker: "y" } })).statusCode);
+    expect(codes.slice(0, 20)).toEqual(Array(20).fill(403));
+    expect(codes[20]).toBe(429);
+    // another phone behind the same proxy is not locked out
+    expect((await app.inject({ method: "POST", url: "/v1/pair", headers: from("10.0.0.8"), payload: { code: "WRONGCODE", deviceId: "x", worker: "y" } })).statusCode).toBe(403);
+  });
+
   it("stops a revoked phone at once", async () => {
     const p = await pair();
     await app.inject({ method: "POST", url: `/v1/admin/devices/${p.deviceId}/revoke`, headers: auth(ADMIN) });
@@ -73,7 +83,26 @@ describe("sync", () => {
     const tampered = { ...ev[1]!, payload: { text: "changed" } };
     const other = (await visitEvents("someone-else", p.facility))[0]!;
     const r3 = (await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: [tampered, other, { junk: true }] } })).json();
-    expect(r3.rejected.map((r: { reason: string }) => r.reason)).toEqual(["bad_hash", "wrong_device", "invalid_event"]);
+    expect(r3.rejected.map((r: { reason: string }) => r.reason).sort()).toEqual(["bad_hash", "invalid_event", "wrong_device"]);
+  });
+
+  it("accepts a visit whatever facility name was typed on the phone; it belongs to the paired facility", async () => {
+    const p = await pair("PHC Ibadan North");
+    const ev = await visitEvents(p.deviceId, "Ibadan North PHC"); // typed at onboarding, before pairing
+    const r = (await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } })).json();
+    expect(r.rejected).toEqual([]);
+    const audio = await app.inject({ method: "PUT", url: `/v1/audio/${ev[0]!.visitId}/${crypto.randomUUID()}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: pcmWav(1) });
+    expect(audio.statusCode).toBe(200);
+    const other = await pair("PHC-2", "phone-2");
+    expect((await app.inject({ method: "GET", url: `/v1/visits/${ev[0]!.visitId}/fhir`, headers: auth(other.token) })).statusCode).toBe(403);
+  });
+
+  it("accepts a batch whose visit start is not first (phones send unsynced events in id order)", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    const r = (await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: [...ev].reverse() } })).json();
+    expect(r.accepted).toHaveLength(3);
+    expect(r.rejected).toEqual([]);
   });
 
   it("pulls only the facility's events, with a cursor", async () => {
@@ -137,6 +166,62 @@ describe("drafting queue", () => {
     expect(seen).toContain("part1 part2 part3");
   });
 
+  it("never transcribes a silent recording, and says so", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    const visitId = ev[0]!.visitId;
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
+    const silent = pcmWav(5);
+    silent.fill(0, 44); // a muted microphone: all zeros
+    const ids = [crypto.randomUUID(), crypto.randomUUID()];
+    await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${ids[0]}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: silent });
+    await app.inject({ method: "PUT", url: `/v1/audio/${visitId}/${ids[1]}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: pcmWav(3) });
+    await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId, language: "pcm", audioIds: ids } });
+    let calls = 0;
+    await runJob(db, fake({ transcribe: async () => (calls++, "spoken words") }), claimNext(db)!, "hub-1");
+    expect(calls).toBe(1);
+    const draft = (await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(p.token) })).json().events.at(-1);
+    expect(draft.payload.needsReview[0]).toMatch(/1 recording was silent/);
+
+    // only silence and no notes: the job fails with a reason the nurse can act on
+    const v2 = await pair("PHC-1", "phone-2");
+    const [start] = await visitEvents(v2.deviceId, v2.facility);
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(v2.token), payload: { events: [start] } });
+    const id = crypto.randomUUID();
+    await app.inject({ method: "PUT", url: `/v1/audio/${start!.visitId}/${id}`, headers: { ...auth(v2.token), "content-type": "audio/wav" }, payload: silent });
+    const job = (await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(v2.token), payload: { visitId: start!.visitId, language: "yo", audioIds: [id] } })).json();
+    await runJob(db, fake(), claimNext(db)!, "hub-1");
+    const status = (await app.inject({ method: "GET", url: `/v1/jobs/${job.id}`, headers: auth(v2.token) })).json();
+    expect(status.status).toBe("failed");
+    expect(status.error).toMatch(/silent_audio/);
+  });
+
+  it("drafts a long visit in parts under the API's text limit and merges them", async () => {
+    const p = await pair();
+    const ev = await visitEvents(p.deviceId, p.facility);
+    const visitId = ev[0]!.visitId;
+    const long = await makeEvent({ visitId, deviceId: p.deviceId, worker: "nurse", type: "note.added", payload: { text: "She says her head hurts badly. ".repeat(600) } });
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: [...ev, long] } });
+    await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId, language: "en", audioIds: [] } });
+    const sizes: number[] = [];
+    let n = 0;
+    await runJob(db, fake({
+      extract: async (text) => (sizes.push(text.length), n++, {
+        findings: [{ concept: "fever", assertion: n === 1 ? "absent" : "present", origin: "model" }],
+        vitals: { bp_systolic: 150 + n }, model: "m", needsReview: ["x".repeat(300)],
+      }),
+    }), claimNext(db)!, "hub-1");
+    expect(sizes.length).toBeGreaterThan(1);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(EXTRACT_CHARS);
+    const draft = (await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(p.token) })).json().events.at(-1);
+    expect(draft.type).toBe("draft.received");
+    expect(draft.payload.findings).toEqual([{ concept: "fever", assertion: "present", origin: "model" }]); // the alarming answer is kept
+    expect(draft.payload.vitals.bp_systolic).toBe(151);
+    expect(draft.payload.needsReview[0]).toMatch(/drafted in \d parts/);
+    expect(draft.payload.needsReview.some((r: string) => /fever: absent in one part, present in another/.test(r))).toBe(true);
+    expect(Math.max(...draft.payload.needsReview.map((r: string) => r.length))).toBeLessThanOrEqual(200);
+  });
+
   it("retries transient failures with backoff, then fails with a visible error", async () => {
     const p = await pair();
     const ev = await visitEvents(p.deviceId, p.facility);
@@ -168,5 +253,16 @@ describe("FHIR export and health", () => {
     expect((await app.inject({ method: "GET", url: `/v1/visits/${ev[0]!.visitId}/fhir`, headers: auth(other.token) })).statusCode).toBe(403);
     expect((await app.inject({ method: "GET", url: "/healthz" })).json().ok).toBe(true);
     expect((await app.inject({ method: "GET", url: "/readyz" })).json().ok).toBe(true);
+  });
+});
+
+describe("long text", () => {
+  it("splits at sentence ends and loses nothing", () => {
+    const text = Array.from({ length: 400 }, (_, i) => `Sentence ${i} is here.`).join(" ");
+    const parts = splitText(text, 1000);
+    expect(parts.every((p) => p.length <= 1000 && p.endsWith("."))).toBe(true);
+    expect(parts.join(" ")).toBe(text);
+    expect(splitText("short")).toEqual(["short"]);
+    expect(mergeDrafts([{ findings: [], vitals: {}, model: "m", needsReview: [] }]).needsReview).toEqual([]);
   });
 });

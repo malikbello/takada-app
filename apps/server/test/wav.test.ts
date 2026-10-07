@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFormat, splitWav, WavError } from "../src/wav";
+import { isSilent, readFormat, splitWav, WavError } from "../src/wav";
 import { pcmWav } from "./helpers";
 
 const API_LIMIT = 10_000_000; // phc-scribe /v1/transcribe
@@ -7,7 +7,9 @@ const API_LIMIT = 10_000_000; // phc-scribe /v1/transcribe
 describe("splitWav", () => {
   it("returns a short recording unchanged", () => {
     const w = pcmWav(30);
-    expect(splitWav(w, 240)).toEqual([w]);
+    const out = splitWav(w, 240);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toBe(w); // the same buffer (a deep compare of 1 MB timed out under load)
   });
 
   it("splits a 10-minute visit into valid segments under the API limit, losing no audio", () => {
@@ -41,5 +43,16 @@ describe("splitWav", () => {
     const float = pcmWav(1);
     float.writeUInt16LE(3, 20); // IEEE float
     expect(() => readFormat(float)).toThrow(/only PCM/);
+  });
+});
+
+describe("isSilent", () => {
+  it("tells a muted microphone from a recording with sound", () => {
+    const quiet = pcmWav(2);
+    quiet.fill(0, 44);
+    expect(isSilent(quiet)).toBe(true);
+    for (let i = 44; i < quiet.length; i += 2) quiet.writeInt16LE(((i / 2) % 9) - 4, i); // hiss, about -80 dBFS
+    expect(isSilent(quiet)).toBe(true);
+    expect(isSilent(pcmWav(2))).toBe(false);
   });
 });
