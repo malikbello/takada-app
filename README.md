@@ -41,6 +41,8 @@ pnpm install
 ```
 
 ## Status
+**Handoff between work sessions: [`docs/status.md`](docs/status.md)** (and phc-scribe `docs/status.md`, "START HERE").
+
 Clinical content is a **draft, not for clinical use**, until every rule and visit-guide item is signed off by the clinical adviser.
 
 ## Licence
