@@ -10,6 +10,9 @@ import { I } from "./icons";
 import { Disclosure, ErrorNote } from "./ui";
 
 type Props = { visit: Visit; profile: Profile };
+// One recording is capped so converting it never runs a low-memory phone out of memory; the
+// nurse taps once to carry on, and the visit's recordings are drafted together.
+const MAX_SECONDS = 20 * 60;
 const who = (v: Visit, p: Profile) => ({ visitId: v.id, deviceId: p.deviceId, worker: p.worker });
 
 /** The record orb. Audio stays on the phone (as 16 kHz WAV) until the hub or cloud drafts it. */
@@ -18,6 +21,7 @@ export function Recorder({ visit, profile }: Props) {
   const [secs, setSecs] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [capped, setCapped] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const t0 = useRef(0);
   const raf = useRef(0);
@@ -61,16 +65,33 @@ export function Recorder({ visit, profile }: Props) {
 
   async function start() {
     setError(null);
+    setCapped(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       const mr = new MediaRecorder(stream);
       const chunks: Blob[] = [];
       const stopWave = drawWave(stream);
-      const timer = window.setInterval(() => setSecs(Math.round((Date.now() - t0.current) / 1000)), 250);
+      // Keep the screen on while recording: when it turns off, the phone may pause the app
+      // and the rest of the visit would not be recorded.
+      let lock: WakeLockSentinel | null = await navigator.wakeLock?.request("screen").catch(() => null) ?? null;
+      const relock = async () => {
+        if (document.visibilityState === "visible" && mr.state === "recording") lock = await navigator.wakeLock?.request("screen").catch(() => null) ?? null;
+      };
+      document.addEventListener("visibilitychange", relock);
+      const timer = window.setInterval(() => {
+        const s = Math.round((Date.now() - t0.current) / 1000);
+        setSecs(s);
+        if (s >= MAX_SECONDS && mr.state === "recording") {
+          setCapped(true);
+          mr.stop();
+        }
+      }, 250);
       mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         clearInterval(timer);
+        document.removeEventListener("visibilitychange", relock);
+        void lock?.release().catch(() => undefined);
         stopWave();
         setRec(null);
         setSaving(true);
@@ -125,6 +146,7 @@ export function Recorder({ visit, profile }: Props) {
           </m.div>
         )}
       </AnimatePresence>
+      {capped && <p className="err" style={{ marginTop: 10 }}>The recording reached 20 minutes and was saved. Tap to keep recording.</p>}
       <ErrorNote error={error} />
     </section>
   );

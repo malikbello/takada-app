@@ -33,10 +33,16 @@ export async function getLink(): Promise<Link | null> {
 
 export class SyncError extends Error {}
 
-async function api(link: Link, path: string, init: RequestInit = {}): Promise<Response> {
+/** Time allowed for a request: 30 s, plus 10 s per MB sent (a 60 MB recording gets 10.5
+ * minutes), since clinic Wi-Fi can be slow and a recording must not time out half-sent. */
+export function timeoutFor(bytes = 0): number {
+  return 30_000 + Math.ceil(bytes / 100_000) * 1000;
+}
+
+async function api(link: Link, path: string, init: RequestInit = {}, timeoutMs = timeoutFor()): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(new URL(path, link.url), { ...init, headers: { Authorization: `Bearer ${link.token}`, ...(init.headers ?? {}) }, signal: AbortSignal.timeout(30_000) });
+    res = await fetch(new URL(path, link.url), { ...init, headers: { Authorization: `Bearer ${link.token}`, ...(init.headers ?? {}) }, signal: AbortSignal.timeout(timeoutMs) });
   } catch {
     throw new SyncError("Can't reach the hub");
   }
@@ -59,31 +65,62 @@ export async function pair(url: string, code: string, deviceId: string, worker: 
   const body = (await res.json().catch(() => ({}))) as { token?: string; facility?: string; node?: string; error?: { message?: string } };
   if (!res.ok || !body.token) throw new SyncError(body.error?.message ?? "Pairing failed");
   const link: Link = { url: base, token: body.token, facility: body.facility!, node: body.node ?? "hub" };
-  await db.settings.put({ key: "link", value: JSON.stringify(link) });
+  // From now on the phone uses the facility name the hub knows (new visits carry it), not
+  // the one typed at onboarding.
+  await db.settings.bulkPut([{ key: "link", value: JSON.stringify(link) }, { key: "facility", value: link.facility }]);
   return link;
 }
 
-export async function syncOnce(): Promise<void> {
+// Rejections that clear on a later sync (another phone's visit start has not arrived yet).
+const TRANSIENT = new Set(["visit_unknown_yet"]);
+let inflight: Promise<void> | null = null;
+
+/** One sync round. If one is already running, this waits for it to finish, then runs a new
+ * round, so a caller that just saved something knows it was included. */
+export async function syncOnce(opts: { ifIdle?: boolean } = {}): Promise<void> {
+  if (inflight && opts.ifIdle) return; // background ticks never queue up behind a long upload
+  while (inflight) await inflight.catch(() => undefined);
+  inflight = runSync();
+  try {
+    await inflight;
+  } finally {
+    inflight = null;
+  }
+}
+
+async function runSync(): Promise<void> {
   const link = await getLink();
-  if (!link || state.pushing) return;
+  if (!link) return;
   set({ pushing: true });
   try {
-    // 1. push
+    // 1. push, oldest first (a visit's start before its other events); events refused in this
+    // round are skipped so the rest still go, and are offered again next round.
     let rejected = 0;
+    const skip = new Set<string>();
     for (;;) {
-      const batch = await db.events.where("synced").equals(0).limit(BATCH).toArray();
+      const unsynced = (await db.events.where("synced").equals(0).sortBy("at")).filter((e) => !skip.has(e.id));
+      const batch = unsynced.slice(0, BATCH);
       if (!batch.length) break;
       const res = await api(link, "/v1/sync/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ events: batch.map(({ synced: _s, ...e }) => e) }) });
       const out = (await res.json()) as { accepted: string[]; rejected: { id: string; reason: string }[] };
       await db.events.bulkUpdate(out.accepted.map((id) => ({ key: id, changes: { synced: 1 as const } })));
-      rejected += out.rejected.length;
-      for (const r of out.rejected) await db.settings.put({ key: `rejected:${r.id}`, value: r.reason });
-      if (!out.accepted.length) break; // only rejections left: stop instead of looping
+      for (const r of out.rejected) {
+        skip.add(r.id);
+        if (TRANSIENT.has(r.reason)) continue;
+        rejected++;
+        await db.settings.put({ key: `rejected:${r.id}`, value: r.reason });
+      }
     }
-    // 2. upload recordings
+    // 2. upload recordings; one that fails does not hold back the others or the pull
+    const failed: string[] = [];
     for (const b of await db.blobs.where("uploaded").equals(0).toArray()) {
-      await api(link, `/v1/audio/${b.visitId}/${b.id}`, { method: "PUT", headers: { "Content-Type": "audio/wav" }, body: b.blob });
-      await db.blobs.update(b.id, { uploaded: 1 });
+      try {
+        await api(link, `/v1/audio/${b.visitId}/${b.id}`, { method: "PUT", headers: { "Content-Type": "audio/wav" }, body: b.blob }, timeoutFor(b.blob.size));
+        await db.blobs.update(b.id, { uploaded: 1 });
+      } catch (e) {
+        if (e instanceof SyncError && /no longer paired/.test(e.message)) throw e;
+        failed.push(e instanceof Error ? e.message : String(e));
+      }
     }
     // 3. pull
     let after = Number((await db.settings.get("cursor"))?.value ?? 0);
@@ -96,7 +133,8 @@ export async function syncOnce(): Promise<void> {
       await db.settings.put({ key: "cursor", value: String(after) });
       if (out.events.length < 500) break;
     }
-    set({ at: new Date().toISOString(), error: null, rejected });
+    const uploadError = failed.length ? `${failed.length} recording${failed.length > 1 ? "s" : ""} could not be sent to the hub (${failed[0]}). They are safe on this phone; the next sync tries again.` : null;
+    set({ at: new Date().toISOString(), error: uploadError, rejected });
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) });
   } finally {
@@ -110,8 +148,19 @@ export async function requestDraft(visitId: string, language: string): Promise<J
   const link = await getLink();
   if (!link) throw new SyncError("Pair this phone with the clinic hub first (Settings)");
   await syncOnce();
-  if (state.error) throw new SyncError(state.error);
-  const audioIds = (await db.blobs.where("visitId").equals(visitId).toArray()).map((b) => b.id);
+  // Draft only once the hub has all of this visit: its events and every recording. (A problem
+  // with another visit's recording does not hold this one back.)
+  const pending = await db.events.where("visitId").equals(visitId).filter((e) => e.synced === 0).toArray();
+  const blobs = await db.blobs.where("visitId").equals(visitId).toArray();
+  if (pending.length || blobs.some((b) => !b.uploaded)) {
+    const start = pending.find((e) => e.type === "visit.started");
+    const why = start ? (await db.settings.get(`rejected:${start.id}`))?.value : undefined;
+    throw new SyncError(
+      why ? `The hub refused this visit (${why}). Ask your supervisor.`
+      : state.error ?? "Part of this visit has not reached the hub yet. Stay on the clinic Wi-Fi and try again.",
+    );
+  }
+  const audioIds = blobs.map((b) => b.id);
   const res = await api(link, "/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitId, language, audioIds }) });
   const job = (await res.json()) as JobStatus;
   await db.settings.put({ key: `job:${visitId}`, value: job.id });
@@ -128,7 +177,7 @@ export async function jobStatus(visitId: string): Promise<JobStatus | null> {
 
 /** Background sync: on start, when the network returns, and every 20 s while visible. */
 export function startSync(): () => void {
-  const tick = () => document.visibilityState === "visible" && navigator.onLine && void syncOnce();
+  const tick = () => document.visibilityState === "visible" && navigator.onLine && void syncOnce({ ifIdle: true });
   const t = window.setInterval(tick, 20_000);
   window.addEventListener("online", tick);
   tick();

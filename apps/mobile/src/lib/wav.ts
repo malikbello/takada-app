@@ -25,19 +25,24 @@ export function encodeWav(samples: Float32Array, rate: number): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-/** Decode any recorded format and resample to 16 kHz mono WAV. */
+/** Decode any recorded format and resample to 16 kHz mono WAV. The decoder resamples to the
+ * context's 16 kHz rate itself, so a long visit never sits in memory at 48 kHz (a 20-minute
+ * stereo recording would be about 460 MB of samples; at 16 kHz mono it is about 77 MB). */
 export async function toWav16k(blob: Blob): Promise<{ wav: Blob; seconds: number }> {
-  const ctx = new AudioContext();
+  const rate = 16000;
+  const ctx = new AudioContext({ sampleRate: rate });
   try {
     const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
-    const rate = 16000;
-    const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
-    const src = off.createBufferSource();
-    src.buffer = decoded;
-    src.connect(off.destination);
-    src.start();
-    const out = await off.startRendering();
-    return { wav: encodeWav(out.getChannelData(0), rate), seconds: decoded.duration };
+    let mono = decoded.getChannelData(0);
+    if (decoded.numberOfChannels > 1) {
+      const mixed = new Float32Array(decoded.length);
+      for (let c = 0; c < decoded.numberOfChannels; c++) {
+        const ch = decoded.getChannelData(c);
+        for (let i = 0; i < ch.length; i++) mixed[i]! += ch[i]! / decoded.numberOfChannels;
+      }
+      mono = mixed;
+    }
+    return { wav: encodeWav(mono, decoded.sampleRate), seconds: decoded.duration };
   } finally {
     await ctx.close();
   }

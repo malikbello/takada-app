@@ -2,7 +2,7 @@ import { m } from "motion/react";
 import { useEffect, useState } from "react";
 import type { Visit } from "@takada/protocol";
 import { useLive } from "../lib/store";
-import { getLink, jobStatus, requestDraft, type JobStatus } from "../lib/sync";
+import { getLink, jobStatus, requestDraft, syncOnce, type JobStatus } from "../lib/sync";
 import { I } from "./icons";
 import { ErrorNote } from "./ui";
 
@@ -19,6 +19,7 @@ export function DraftButton({ visit }: { visit: Visit }) {
         const j = await jobStatus(visit.id);
         if (!stop) setJob(j);
         if (j && (j.status === "queued" || j.status === "running") && !stop) setTimeout(poll, 4000);
+        else if (j?.status === "done" && !stop) void syncOnce({ ifIdle: true }); // bring the draft in now
       } catch (e) {
         if (!stop) setError((e as Error).message);
       }
@@ -50,7 +51,14 @@ export function DraftButton({ visit }: { visit: Visit }) {
         </m.button>
       )}
       {job?.status === "failed" && <ErrorNote error={`Drafting failed: ${job.error ?? "unknown error"}. Try again.`} />}
-      {visit.draft && <p className="ok-note" style={{ marginTop: 12 }}>Draft ready from {visit.draft.model}. Check it in Review before confirming.</p>}
+      {visit.draft && (
+        visit.draft.needsReview.length || !visit.findings.some((f) => f.origin === "model")
+          ? <p className="err" style={{ marginTop: 12 }}>
+              Draft ready, but check it closely: {visit.findings.some((f) => f.origin === "model") ? "" : "it found nothing to record. "}
+              {visit.draft.needsReview.slice(0, 3).join(" · ")}
+            </p>
+          : <p className="ok-note" style={{ marginTop: 12 }}>Draft ready. Check it in Review before confirming.</p>
+      )}
       <ErrorNote error={error} />
     </section>
   );
