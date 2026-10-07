@@ -38,7 +38,9 @@ export function toDraft(record: Encounter, dropped: { path?: string; reason?: st
   return { findings, vitals, model, needsReview: dropped.map((d) => `${d.path ?? "field"}: ${d.reason ?? "needs review"}${d.detail ? ` (${d.detail})` : ""}`) };
 }
 
-export function httpScribe(base: string, apiKey?: string, proxy?: { key: string; secret: string }, timeoutMs = 300_000): Scribe {
+// 15 minutes: on a laptop CPU the API may take up to 10 minutes for one long draft (phc-scribe
+// PHC_LLAMACPP_TIMEOUT); jobs are queued, so a slow draft never blocks the nurse.
+export function httpScribe(base: string, apiKey?: string, proxy?: { key: string; secret: string }, timeoutMs = 900_000): Scribe {
   const headers = (type: string): Record<string, string> => ({
     "Content-Type": type,
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
