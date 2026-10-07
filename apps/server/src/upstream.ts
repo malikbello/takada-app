@@ -25,7 +25,7 @@ type Encounter = {
   };
 };
 
-export function toDraft(record: Encounter, dropped: { path?: string; reason?: string }[], model: string): Omit<Draft, "transcript"> {
+export function toDraft(record: Encounter, dropped: { path?: string; reason?: string; detail?: string }[], model: string): Omit<Draft, "transcript"> {
   const findings: Finding[] = (record.findings ?? [])
     .filter((f) => ["present", "absent", "possible", "historical"].includes(f.assertion))
     .map((f) => ({ concept: f.concept, assertion: f.assertion as Finding["assertion"], evidence: f.evidence?.text?.slice(0, 500), origin: "model" as const }));
@@ -35,10 +35,12 @@ export function toDraft(record: Encounter, dropped: { path?: string; reason?: st
   if (v.temperature) vitals.temperature_c = v.temperature.unit === "Cel" ? v.temperature.value : Math.round(((v.temperature.value - 32) * 5 / 9) * 10) / 10;
   if (v.weight) vitals.weight_kg = v.weight.value;
   if (v.pulse) vitals.pulse = v.pulse.value;
-  return { findings, vitals, model, needsReview: dropped.map((d) => `${d.path ?? "field"}: ${d.reason ?? "needs review"}`) };
+  return { findings, vitals, model, needsReview: dropped.map((d) => `${d.path ?? "field"}: ${d.reason ?? "needs review"}${d.detail ? ` (${d.detail})` : ""}`) };
 }
 
-export function httpScribe(base: string, apiKey?: string, proxy?: { key: string; secret: string }, timeoutMs = 300_000): Scribe {
+// 15 minutes: on a laptop CPU the API may take up to 10 minutes for one long draft (phc-scribe
+// PHC_LLAMACPP_TIMEOUT); jobs are queued, so a slow draft never blocks the nurse.
+export function httpScribe(base: string, apiKey?: string, proxy?: { key: string; secret: string }, timeoutMs = 900_000): Scribe {
   const headers = (type: string): Record<string, string> => ({
     "Content-Type": type,
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -67,7 +69,7 @@ export function httpScribe(base: string, apiKey?: string, proxy?: { key: string;
       const body = JSON.stringify(language && language !== "auto" ? { text, language } : { text });
       const out = (await call("/v1/extract", { method: "POST", headers: headers("application/json"), body })) as {
         record: Encounter;
-        grounding: { dropped: { path?: string; reason?: string }[] };
+        grounding: { dropped: { path?: string; reason?: string; detail?: string }[] };
         versions?: { model?: string };
       };
       return toDraft(out.record, out.grounding?.dropped ?? [], out.versions?.model ?? "phc-scribe");

@@ -1,0 +1,8 @@
+# Check runs only: publish the scribe API on the hub's own loopback, so phc-scribe
+# scripts/hub_check.py can time drafts and score them. Not for normal operation (the phones
+# only talk to the takada service through the proxy).
+#   docker compose -f deploy/compose/hub.yml -f deploy/compose/hub.check.yml \
+#     --env-file deploy/compose/hub.env --profile model up -d
+services:
+  scribe:
+    ports: ["127.0.0.1:8000:8000"]

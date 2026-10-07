@@ -42,12 +42,23 @@ services:
 
   # The fine-tuned N-ATLaS (GGUF) on the CPU. Enable with --profile model once the
   # model file is in the `models` volume; until then the scribe uses its keyword extractor.
+  # Built from the llama.cpp release the model was evaluated with (deploy/llm.Dockerfile),
+  # and served with the evaluation's settings (phc-scribe deploy/modal_gguf.py): the chat
+  # template from the GGUF (--jinja) and an 8,192-token context. Same build, same settings,
+  # same results as the benchmark.
   llm:
     profiles: [model]
-    image: ghcr.io/ggml-org/llama.cpp:server
+    build: { context: .., dockerfile: llm.Dockerfile }
+    image: takada-llm:b11387
     restart: unless-stopped
-    command: ["-m", "/models/takada-anc.gguf", "--host", "0.0.0.0", "--port", "8080", "-c", "4096"]
+    # --parallel 1: one draft at a time gets every core (the hub's queue feeds it serially);
+    # with several slots, a request the API had given up on kept competing for the CPU.
+    command: ["-m", "/models/takada-anc.gguf", "--host", "0.0.0.0", "--port", "8080",
+              "-c", "8192", "--jinja", "--no-webui", "--parallel", "1"]
     volumes: [models:/models:ro]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
 
   # HTTPS on the clinic network: phones need a secure origin for the microphone and the
   # offline app (service worker). Caddy issues the hub's certificate from its own CA;

@@ -41,6 +41,11 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # On pull requests the gitleaks action lists the PR's commits, which needs this (as in
+    # phc-scribe); without it the scan stops with a 403 before scanning anything.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
