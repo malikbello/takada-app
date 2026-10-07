@@ -51,7 +51,10 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
       },
     },
     bodyLimit: 2 * 1024 * 1024,
-    trustProxy: cfg.ROLE === "cloud",
+    // Both roles sit behind a proxy that is the only way in (the hub's Caddy; the cloud's
+    // load balancer), so the client address comes from X-Forwarded-For. Without it every phone
+    // at a clinic would share Caddy's address, and one nurse's typos would lock pairing for all.
+    trustProxy: true,
     genReqId: () => crypto.randomUUID(),
   });
 
@@ -123,13 +126,27 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     return { revoked: id };
   });
 
+  // Wrong pairing codes: at most PAIR_FAILURES per address per window, then 429 until it passes.
+  const pairFailures = new Map<string, { n: number; until: number }>();
+  const PAIR_FAILURES = 20, PAIR_WINDOW_MS = 10 * 60_000;
   app.post("/v1/pair", { config: {} }, async (req) => {
+    const now0 = Date.now();
+    const seen = pairFailures.get(req.ip);
+    if (seen && seen.until > now0 && seen.n >= PAIR_FAILURES) throw new ApiError(429, "rate_limited", "Too many wrong pairing codes. Wait 10 minutes, then try again.");
+    const fail = () => {
+      const f = seen && seen.until > now0 ? seen : { n: 0, until: now0 + PAIR_WINDOW_MS };
+      pairFailures.set(req.ip, { ...f, n: f.n + 1 });
+      if (pairFailures.size > 10_000) pairFailures.clear(); // bound memory under a flood
+    };
     const body = PairBody.parse(req.body);
     const now = new Date().toISOString();
     const row = db.prepare("SELECT facility, expires_at, used_at FROM pairing_codes WHERE code_hash = ?").get(sha256(body.code.toUpperCase())) as
       | { facility: string; expires_at: string; used_at: string | null }
       | undefined;
-    if (!row || row.used_at || row.expires_at < now) throw new ApiError(403, "invalid_code", "That pairing code is wrong, used or expired");
+    if (!row || row.used_at || row.expires_at < now) {
+      fail();
+      throw new ApiError(403, "invalid_code", "That pairing code is wrong, used or expired");
+    }
     const token = newToken();
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -150,14 +167,19 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     const dev = req.device!;
     const accepted: string[] = [];
     const rejected: { id: string; reason: string }[] = [];
-    for (const raw of events) {
+    // Visit starts first: a phone's batch is not in time order, and a visit's other events
+    // are refused until its start is known.
+    const isStart = (e: unknown) => (e as { type?: unknown } | null)?.type === "visit.started";
+    for (const raw of [...events.filter(isStart), ...events.filter((e) => !isStart(e))]) {
       const parsed = VisitEvent.safeParse(raw);
       const id = (raw as { id?: string })?.id ?? "?";
       if (!parsed.success) { rejected.push({ id, reason: "invalid_event" }); continue; }
       const e = parsed.data;
       if (e.deviceId !== dev.id) { rejected.push({ id, reason: "wrong_device" }); continue; }
       if (!(await verifyEvent(e))) { rejected.push({ id, reason: "bad_hash" }); continue; }
-      if (e.type === "visit.started" && e.payload.facility !== dev.facility) { rejected.push({ id, reason: "wrong_facility" }); continue; }
+      // A new visit belongs to the facility the phone is paired with. The facility name typed in
+      // the visit (payload.facility) is kept as written but never decides ownership: refusing
+      // a visit over a spelling difference would strand it, and its audio, on the phone.
       const owner = visitFacility(db, e.visitId);
       if (owner === null) {
         if (e.type !== "visit.started") { rejected.push({ id, reason: "visit_unknown_yet" }); continue; }

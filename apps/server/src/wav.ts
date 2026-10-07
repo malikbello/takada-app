@@ -59,3 +59,18 @@ export function splitWav(buf: Buffer, maxSeconds: number): Buffer[] {
   }
   return out;
 }
+
+/** True when a 16-bit recording carries no sound at all (RMS under about -60 dBFS): a muted
+ * or broken microphone. Speech recognisers invent text from silence, so it is never sent. */
+export function isSilent(buf: Buffer, rmsFloor = 32): boolean {
+  const f = readFormat(buf);
+  if (f.bits !== 16) return false;
+  const end = f.dataStart + f.dataLength - (f.dataLength % 2);
+  let sum = 0;
+  let n = 0;
+  for (let at = f.dataStart; at < end; at += 2, n++) {
+    const x = buf.readInt16LE(at);
+    sum += x * x;
+  }
+  return n === 0 || Math.sqrt(sum / n) < rmsFloor;
+}

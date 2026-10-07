@@ -1,5 +1,6 @@
 // Client for the phc-scribe /v1 API (contract: phc-scribe docs/openapi.v1.json). The hub
 // points it at the local API with the offline model; the cloud at the GPU deployment.
+import { Agent, fetch } from "undici";
 import type { Finding, Vitals } from "@takada/protocol";
 
 export type Draft = { transcript: string; findings: Finding[]; vitals: Vitals; model: string; needsReview: string[] };
@@ -40,16 +41,20 @@ export function toDraft(record: Encounter, dropped: { path?: string; reason?: st
 
 // 15 minutes: on a laptop CPU the API may take up to 10 minutes for one long draft (phc-scribe
 // PHC_LLAMACPP_TIMEOUT); jobs are queued, so a slow draft never blocks the nurse.
+// The agent's own limits must be raised too: Node's fetch gives up after 300 s without response
+// headers (UND_ERR_HEADERS_TIMEOUT) whatever the abort signal says, and the API sends its
+// headers only when the draft is done, so every draft over 5 minutes failed and was retried.
 export function httpScribe(base: string, apiKey?: string, proxy?: { key: string; secret: string }, timeoutMs = 900_000): Scribe {
+  const dispatcher = new Agent({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs });
   const headers = (type: string): Record<string, string> => ({
     "Content-Type": type,
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     ...(proxy ? { "Modal-Key": proxy.key, "Modal-Secret": proxy.secret } : {}),
   });
-  async function call(path: string, init: RequestInit): Promise<unknown> {
-    let res: Response;
+  async function call(path: string, init: { method: string; headers: Record<string, string>; body: string | Uint8Array }): Promise<unknown> {
+    let res: Awaited<ReturnType<typeof fetch>>;
     try {
-      res = await fetch(new URL(path, base), { ...init, signal: AbortSignal.timeout(timeoutMs) });
+      res = await fetch(new URL(path, base), { ...init, dispatcher, signal: AbortSignal.timeout(timeoutMs) });
     } catch (e) {
       throw new UpstreamError("upstream_unreachable", `phc-scribe unreachable: ${(e as Error).message}`, true);
     }

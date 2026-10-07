@@ -4,7 +4,7 @@ import { I, Logo } from "../components/icons";
 import { ErrorNote, TopBar } from "../components/ui";
 import { LANGS } from "../lib/greet";
 import { applyEffects, getEffects, setEffects, type Effects } from "../lib/effects";
-import { saveProfile, useLive, type Profile } from "../lib/store";
+import { getProfile, saveProfile, useLive, type Profile } from "../lib/store";
 import { getLink, pair, syncOnce, useSyncState } from "../lib/sync";
 
 export function Settings({ profile, onProfile }: { profile: Profile; onProfile: (p: Profile) => void }) {
@@ -21,6 +21,8 @@ export function Settings({ profile, onProfile }: { profile: Profile; onProfile: 
     setError(null);
     try {
       await pair(url, code, profile.deviceId, profile.worker);
+      const updated = await getProfile(); // pairing sets the facility to the hub's name for it
+      if (updated) onProfile(updated);
       setCode("");
       await syncOnce();
     } catch (err) {

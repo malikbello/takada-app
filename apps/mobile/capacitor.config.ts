@@ -6,9 +6,12 @@ const config: CapacitorConfig = {
   appId: "dev.malikbello.takada",
   appName: "Tákàdá",
   webDir: "dist",
-  // Serve the bundled files from https://localhost (a secure origin), so the microphone
-  // and IndexedDB work without the hub; calls to the hub are ordinary HTTPS requests.
-  server: { androidScheme: "https", iosScheme: "https" },
+  // Serve the bundled files from a secure origin, so the microphone and IndexedDB work
+  // without the hub; calls to the hub are ordinary HTTPS requests (the hub allows both
+  // origins: deploy/compose/hub.yml CORS_ORIGINS). Android: https://localhost. iPhone:
+  // capacitor://localhost, since WKWebView cannot serve the app under https (Capacitor would
+  // silently fall back to it anyway).
+  server: { androidScheme: "https", iosScheme: "capacitor" },
   android: { allowMixedContent: false, captureInput: true, webContentsDebuggingEnabled: false },
   ios: { contentInset: "never", limitsNavigationsToAppBoundDomains: false },
   plugins: {

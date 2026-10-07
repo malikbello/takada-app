@@ -6,12 +6,62 @@ import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { makeEvent } from "@takada/protocol";
 import { insertEvent, visit } from "./store";
-import { UpstreamError, type Scribe } from "./upstream";
-import { splitWav } from "./wav";
+import { UpstreamError, type Draft, type Scribe } from "./upstream";
+import { isSilent, splitWav } from "./wav";
 
 const MAX_ATTEMPTS = 3;
 // Under phc-scribe's 10 MB request limit (16 kHz mono 16-bit: 4 min is 7.7 MB).
 export const SEGMENT_SECONDS = 240;
+// phc-scribe /v1/extract takes at most 8,000 characters (PHC_MAX_TEXT_CHARS); a long visit
+// (about 10 minutes of speech or more) is drafted in parts and the parts merged.
+export const EXTRACT_CHARS = 8000;
+// draft.received limits (packages/protocol events.ts): a draft over them could not be stored.
+const MAX_FINDINGS = 60, MAX_REVIEW = 60, REVIEW_CHARS = 200;
+
+/** Split text into parts of at most `max` characters, at a sentence or word end when possible. */
+export function splitText(text: string, max = EXTRACT_CHARS): string[] {
+  const parts: string[] = [];
+  let rest = text.trim();
+  while (rest.length > max) {
+    const window = rest.slice(0, max);
+    const cut = Math.max(window.lastIndexOf(". "), window.lastIndexOf("\n"), window.lastIndexOf("? "), window.lastIndexOf("! "));
+    const at = cut > max / 2 ? cut + 1 : window.lastIndexOf(" ") > max / 2 ? window.lastIndexOf(" ") : max;
+    parts.push(rest.slice(0, at).trim());
+    rest = rest.slice(at).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
+type Extracted = Omit<Draft, "transcript">;
+
+// When parts disagree about a finding, the more alarming answer is kept, so a danger sign said
+// in one part is never hidden by an "absent" in another.
+const ALARM = { present: 3, possible: 2, historical: 1, absent: 0 } as const;
+
+/** Merge the drafts of a long visit's parts. Nothing is dropped silently: whatever the parts
+ * disagree on is listed for the health worker to check (a vital keeps its first value). */
+export function mergeDrafts(drafts: Extracted[]): Extracted {
+  if (drafts.length === 1) return drafts[0]!;
+  const review = [`Long visit: drafted in ${drafts.length} parts. Check the whole record.`];
+  const findings: Extracted["findings"] = [];
+  for (const f of drafts.flatMap((d) => d.findings)) {
+    const i = findings.findIndex((x) => x.concept === f.concept);
+    if (i < 0) findings.push(f);
+    else if (findings[i]!.assertion !== f.assertion) {
+      review.push(`${f.concept}: ${findings[i]!.assertion} in one part, ${f.assertion} in another`);
+      if (ALARM[f.assertion] > ALARM[findings[i]!.assertion]) findings[i] = f;
+    }
+  }
+  const vitals: Extracted["vitals"] = {};
+  for (const d of drafts) {
+    for (const [k, v] of Object.entries(d.vitals) as [keyof Extracted["vitals"], number][]) {
+      if (vitals[k] === undefined) vitals[k] = v;
+      else if (vitals[k] !== v) review.push(`${k}: ${vitals[k]} in one part, ${v} in another`);
+    }
+  }
+  return { findings, vitals, model: drafts[0]!.model, needsReview: [...review, ...drafts.flatMap((d) => d.needsReview)] };
+}
 
 type JobRow = { id: string; visit_id: string; facility: string; language: string; audio_ids: string; attempts: number };
 
@@ -37,6 +87,8 @@ export async function runJob(db: DatabaseSync, scribe: Scribe, job: JobRow, node
     const v = visit(db, job.visit_id);
     if (!v) throw new UpstreamError("visit_missing", "the visit's events have not synced yet", true);
     const parts: string[] = [];
+    const review: string[] = [];
+    let silent = 0;
     for (const id of JSON.parse(job.audio_ids) as string[]) {
       const a = db.prepare("SELECT path FROM audio WHERE id = ? AND visit_id = ?").get(id, job.visit_id) as { path: string } | undefined;
       if (!a) throw new UpstreamError("audio_missing", `audio ${id} has not been uploaded yet`, true);
@@ -48,15 +100,31 @@ export async function runJob(db: DatabaseSync, scribe: Scribe, job: JobRow, node
         throw new UpstreamError("audio_invalid", `audio ${id}: ${(e as Error).message}`, false);
       }
       const texts: string[] = [];
-      for (const seg of segments) texts.push(await scribe.transcribe(seg, job.language));
+      for (const seg of segments) if (!isSilent(seg)) texts.push(await scribe.transcribe(seg, job.language));
+      if (!texts.length) {
+        silent++;
+        continue;
+      }
       parts.push(texts.join(" ").trim());
     }
+    if (silent) review.push(`${silent} recording${silent > 1 ? "s were" : " was"} silent and not used: check the phone's microphone`);
     const transcript = [...parts, ...v.notes].join("\n").trim();
-    if (!transcript) throw new UpstreamError("nothing_to_draft", "no recording or notes for this visit", false);
-    const draft = await scribe.extract(transcript, job.language === "auto" ? null : job.language);
+    if (!transcript) {
+      if (silent) throw new UpstreamError("silent_audio", "the recording is silent: check the phone's microphone, then record again or type notes", false);
+      throw new UpstreamError("nothing_to_draft", "no recording or notes for this visit", false);
+    }
+    const lang = job.language === "auto" ? null : job.language;
+    const drafts: Extracted[] = [];
+    for (const part of splitText(transcript)) drafts.push(await scribe.extract(part, lang));
+    const draft = mergeDrafts(drafts);
     const ev = await makeEvent({
       visitId: job.visit_id, deviceId: `server:${node}`, worker: "takada-draft", type: "draft.received",
-      payload: { transcript: transcript.slice(0, 50_000), ...draft },
+      payload: {
+        transcript: transcript.slice(0, 50_000),
+        ...draft,
+        findings: draft.findings.slice(0, MAX_FINDINGS),
+        needsReview: [...review, ...draft.needsReview].slice(0, MAX_REVIEW).map((r) => r.slice(0, REVIEW_CHARS)),
+      },
     });
     insertEvent(db, ev, job.facility);
     db.prepare("UPDATE jobs SET status = 'done', error = NULL, updated_at = ? WHERE id = ?").run(now(), job.id);

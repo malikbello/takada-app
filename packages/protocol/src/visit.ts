@@ -38,6 +38,10 @@ const key = (f: { concept: string; assertion: string }) => `${f.concept}|${f.ass
 
 export function reduce(events: VisitEvent[]): Visit | null {
   let v: Visit | null = null;
+  // Vitals typed by the worker and the latest draft's, kept apart: the worker's always win,
+  // and a new draft replaces the previous draft's values instead of piling up under them.
+  let workerVitals: Vitals = {};
+  let modelVitals: Vitals = {};
   for (const e of order(events)) {
     if (e.type === "visit.started") {
       v = {
@@ -55,7 +59,11 @@ export function reduce(events: VisitEvent[]): Visit | null {
         v.audio.push(e.payload);
         break;
       case "finding.set":
-        v.findings = [...v.findings.filter((f) => key(f) !== key(e.payload)), e.payload];
+        v.findings = [
+          // The worker's entry replaces the model's for the same concept, whatever it said.
+          ...v.findings.filter((f) => key(f) !== key(e.payload) && !(e.payload.origin === "worker" && f.origin === "model" && f.concept === e.payload.concept)),
+          e.payload,
+        ];
         break;
       case "finding.removed":
         v.findings = v.findings.filter((f) => key(f) !== key(e.payload));
@@ -64,14 +72,19 @@ export function reduce(events: VisitEvent[]): Visit | null {
         v.asked = e.payload.asked ? [...new Set([...v.asked, e.payload.itemId])] : v.asked.filter((x) => x !== e.payload.itemId);
         break;
       case "vitals.set":
-        v.vitals = { ...v.vitals, ...e.payload };
+        workerVitals = { ...workerVitals, ...e.payload };
+        v.vitals = { ...modelVitals, ...workerVitals };
         break;
       case "draft.received": {
         v.transcript = e.payload.transcript;
-        // The worker's own entries win over the model's draft for the same concept.
-        const workerConcepts = new Set(v.findings.filter((f) => f.origin === "worker").map((f) => f.concept));
-        v.findings = [...v.findings, ...e.payload.findings.filter((f) => !workerConcepts.has(f.concept))];
-        v.vitals = { ...e.payload.vitals, ...v.vitals };
+        // The latest draft replaces the previous one ("Draft again" must not leave two drafts'
+        // findings side by side, possibly contradicting); the worker's own entries win over
+        // the model's for the same concept.
+        const workerFindings = v.findings.filter((f) => f.origin === "worker");
+        const workerConcepts = new Set(workerFindings.map((f) => f.concept));
+        v.findings = [...workerFindings, ...e.payload.findings.filter((f) => !workerConcepts.has(f.concept))];
+        modelVitals = e.payload.vitals;
+        v.vitals = { ...modelVitals, ...workerVitals };
         v.draft = { model: e.payload.model, needsReview: e.payload.needsReview };
         break;
       }
