@@ -61,17 +61,28 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
 **Steps:**
 1. Install Docker (Windows: Docker Desktop with WSL2).
 2. `cp deploy/compose/hub.env.example deploy/compose/hub.env`, then fill it in. Generate each secret with `openssl rand -base64 32`; never reuse them across clinics.
-3. Build the phc-scribe API image from the `phc-scribe` repo, tagged `phc-scribe-api:local`. Copy the models into the `models` volume, once, while online:
-   - `asr-ft/yo` and `asr-ft/pcm`: the fine-tuned N-ATLaS ASR (ADR-0026);
-   - the Hugging Face cache of `NCAIR1/NigerianAccentedEnglish` (for English) under `hf/`;
-   - `takada-anc.gguf`: the fine-tuned N-ATLaS, when ready.
+3. Build the two images, from a `phc-scribe` checkout next to this repo:
+   ```bash
+   docker build -f ../phc-scribe/deploy/api.Dockerfile -t phc-scribe-api:local ../phc-scribe
+   docker compose -f deploy/compose/hub.yml build llm     # llama.cpp b11387, about 10 minutes
+   ```
+4. Fetch the models into the `models` volume, once, while online (about 7 GB). Needs a Hugging Face token with read access to the private model repos, for this one run only:
+   ```bash
+   docker compose -f deploy/compose/hub.yml --env-file deploy/compose/hub.env \
+     run --rm -e HF_TOKEN -e HF_HUB_OFFLINE=0 scribe python -m phc_scribe.fetch_models
+   ```
+   It installs:
+   - `takada-anc.gguf`: the fine-tuned N-ATLaS Q4_K_M. Its SHA-256 must match the published manifest, or it is not installed.
+   - `asr-ft/yo` and `asr-ft/pcm`: the fine-tuned N-ATLaS ASR (ADR-0026), each checked to be complete.
+   - `NCAIR1/NigerianAccentedEnglish` in the Hugging Face cache under `hf/`, for English.
 
-   The hub runs with `HF_HUB_OFFLINE=1`, so a missing model fails loudly instead of downloading.
-4. Start the hub. Without `--profile model`, the hub uses the keyword extractor:
+   After that the hub runs with `HF_HUB_OFFLINE=1`, so a missing model fails loudly instead of downloading.
+5. Start the hub with the model:
    ```bash
    docker compose -f deploy/compose/hub.yml --env-file deploy/compose/hub.env --profile model up -d
    ```
-5. Check it: `curl -k https://takada-hub.local/readyz` should return `{"ok":true,...}`.
+   Without `--profile model` (and with `PHC_EXTRACTOR=keyword`), the hub drafts with the keyword extractor only.
+6. Check it: `curl -k https://takada-hub.local/readyz` should return `{"ok":true,...}`.
 
 **Why HTTPS on a local network.** Phones only allow the microphone and offline mode on a secure origin. The hub's proxy (Caddy) issues the hub's certificate from its own small certificate authority.
 - Each phone trusts that authority **once**, at enrolment: Android Settings → Security → Install a certificate (the Android app trusts it too, ADR-0027); iPhone: install the profile, then Settings → General → About → Certificate Trust Settings.
