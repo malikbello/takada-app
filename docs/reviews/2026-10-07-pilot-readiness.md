@@ -10,7 +10,7 @@ Two days before the 9 Oct pilot, the whole system was exercised as a clinic woul
 
 **Not done here:** an APK on a real phone (no Android SDK in the sandbox; the `native` CI workflow builds it), and the clinic network itself. Both belong in the laptop dry run.
 
-## Pilot blockers found, and fixed in this change
+## Pilot blockers found, and fixed in this change (13)
 
 | # | What happened | Effect at the clinic | Fix |
 |---|---|---|---|
@@ -26,6 +26,7 @@ Two days before the 9 Oct pilot, the whole system was exercised as a clinic woul
 | B10 | Nothing announces `takada-hub.local` on the clinic network. | Phones (and `curl` on the laptop) may not find the hub. | `docs/operations.md`: use the laptop hotspot's fixed address `192.168.137.1`, the laptop's own `.local` name, or router DNS, and test it on the pilot phones in the dry run. |
 | B11 | The screen turned off during a recording. | The phone may pause the app and stop recording mid-visit. | A screen wake lock is held while recording. |
 | B12 | A recording was decoded at 48 kHz stereo before conversion. | A 30-minute visit needed about 700 MB, which a low-memory phone cannot hold. | The phone decodes straight to 16 kHz mono, and one recording is capped at 20 minutes ("saved, tap to keep recording"). |
+| B13 | Node's `fetch` gives up after 300 s without response headers (`UND_ERR_HEADERS_TIMEOUT`), whatever the 15-minute abort signal says, and phc-scribe sends its headers only when the draft is done. | **Every draft over 5 minutes failed** and was retried. On a slow laptop CPU that can be every long draft: the 15-minute wait set in PR #1 never took effect. Seen on the hub: the first attempt of the long visit failed at 301 s while the model was still writing (it finished at 311 s). Reproduced in isolation. | The scribe client uses its own HTTP agent, whose header and body limits equal its timeout (`undici` 6.29.0, the patched release of the line Node 22 bundles). Checked with a test API that answers after 330 s. |
 
 **Also fixed:**
 - Pairing codes are rate limited: 20 wrong codes per address per 10 minutes. On the hub the address is the phone's, taken from Caddy's `X-Forwarded-For`, so one nurse's typos never lock out the others.
@@ -41,6 +42,9 @@ Every fix has a test, and each new test was run against the old code to confirm 
 ## What held up
 - **Push storm:** 20 phones × 500 events at once. All 10,000 were accepted in about 8 s, a re-push was idempotent, `/healthz` answered in about 40 ms during the storm, and the pull returned every event once, in order, across 21 pages.
 - **Hostile input refused with clear reasons:** invalid JSON, oversized bodies, 501 events, `null` events, another device's events, tampered hashes, writes into another facility's visit, negative cursors, and missing or revoked tokens.
+- **A long visit on the real hub** (9,180 characters) was drafted in 2 parts and merged.
+  - It found the headache, blurred vision, no bleeding and BP 160/110, and Review shows "drafted in 2 parts".
+  - Each part took about 80–95 s once the prompt was cached.
 - **Real speech, end to end:** an 11-second English visit was transcribed word for word, and the record drafted in about 80 s (warm).
   - The cold first draft after the model loads took about 7 minutes. Start the hub, then send one warm-up draft before the first patient.
 

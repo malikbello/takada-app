@@ -14,10 +14,11 @@ _Last updated: 7 Oct 2026 (session 9, pilot-readiness review). The project-wide 
 - **`main`:** the PWA, the hub and cloud server, the Android and iPhone apps (Capacitor 8, ADR-0027), the hub image and the llama.cpp b11387 build the model was evaluated with (merged as PR #1). CI and the `native` workflow are green.
 - **Pilot-readiness review (7 Oct): `docs/reviews/2026-10-07-pilot-readiness.md`. Read it before the dry run.**
   - The full hub (real model, real ASR) was driven from a browser and with scripted phones.
-  - It found 12 pilot blockers (B1–B12), all fixed with tests in the review PR. The worst three:
+  - It found 13 pilot blockers (B1–B13), all fixed with tests in the review PR. The worst:
     - a typed facility name refused every visit;
     - sync stalled after a long offline day;
-    - visits over about 10 minutes failed to draft.
+    - visits over about 10 minutes failed to draft;
+    - any draft over 5 minutes was cut off by Node's fetch (B13).
   - Open findings O1–O9 still need decisions. **O1: the model wrote a false "reduced fetal movement" from "the baby moves well"**, so nurses must check every model finding.
 - **The clinical bundle** (`packages/clinical/src/bundle.json`) is identical to phc-scribe's `exports/clinical-bundle.json` (checked 7 Oct).
 

@@ -1,5 +1,7 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
-import { toDraft } from "../src/upstream";
+import { httpScribe, toDraft } from "../src/upstream";
 
 describe("toDraft", () => {
   it("shows what was removed from the model's output, with its detail", () => {
@@ -16,5 +18,28 @@ describe("toDraft", () => {
       "vitals.pulse: ungrounded",
     ]);
     expect(d.findings.map((f) => f.concept)).toEqual(["severe_headache"]);
+  });
+});
+
+describe("httpScribe", () => {
+  // A stand-in for the API, which sends its headers only once the draft is written.
+  async function slowApi(delayMs: number) {
+    const srv = createServer((req, res) => {
+      req.resume();
+      setTimeout(() => res.setHeader("Content-Type", "application/json").end(JSON.stringify({ text: "hello" })), delayMs);
+    });
+    srv.requestTimeout = 0;
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+    return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`, close: () => srv.close() };
+  }
+
+  it("waits as long as its own timeout for a slow draft, then gives up as retryable", async () => {
+    const slow = await slowApi(600);
+    try {
+      expect(await httpScribe(slow.url, "k", undefined, 2000).transcribe(Buffer.alloc(10), "yo")).toBe("hello");
+      await expect(httpScribe(slow.url, "k", undefined, 200).transcribe(Buffer.alloc(10), "yo")).rejects.toMatchObject({ code: "upstream_unreachable", retryable: true });
+    } finally {
+      slow.close();
+    }
   });
 });
