@@ -1,6 +1,6 @@
 # Takada: status and handoff
 
-_Last updated: 7 Oct 2026 (session 9, pilot-readiness review). The project-wide handoff is phc-scribe `docs/status.md` → "START HERE (7 Oct)": read that first. This file covers only this repo._
+_Last updated: 8 Oct 2026 (session 9, pilot hardening). The project-wide handoff is phc-scribe `docs/status.md` → "START HERE (7 Oct)": read that first. This file covers only this repo._
 
 ## Resume prompt (paste into a new session)
 > Read `docs/status.md` in `malikbello/takada-app`, then phc-scribe `docs/status.md` "START HERE (7 Oct)". Follow the phc-scribe working agreement:
@@ -20,6 +20,14 @@ _Last updated: 7 Oct 2026 (session 9, pilot-readiness review). The project-wide 
     - visits over about 10 minutes failed to draft;
     - any draft over 5 minutes was cut off by Node's fetch (B13).
   - Open findings O1–O9 still need decisions. **O1: the model wrote a false "reduced fetal movement" from "the baby moves well"**, so nurses must check every model finding.
+- **8 Oct, PR #3 merged:**
+  - **crash-safe recordings** (review O3): chunks are saved every second and recovered on the next start;
+  - **plain error messages** for nurses (O9);
+  - **a live "No sound is reaching the microphone" warning**;
+  - phc-scribe's `grounding.checks` shown under "Please check";
+  - empty transcripts treated as no speech;
+  - even audio parts.
+- **Waiting on Malik:** phc-scribe PR 27 (ADR-0030 polarity check, ADR-0031 speech gate), Proposed. After merge, rebuild `phc-scribe-api:local` on the hub.
 - **The clinical bundle** (`packages/clinical/src/bundle.json`) is identical to phc-scribe's `exports/clinical-bundle.json` (checked 7 Oct).
 
 ## Next steps
