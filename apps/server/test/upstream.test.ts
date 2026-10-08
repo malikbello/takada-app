@@ -21,6 +21,19 @@ describe("toDraft", () => {
   });
 });
 
+describe("toDraft checks", () => {
+  it("lists a finding whose quote says the opposite first, for the health worker (phc-scribe ADR-0030)", () => {
+    const d = toDraft(
+      { findings: [{ concept: "reduced_fetal_movement", assertion: "present", evidence: { text: "the baby moves well" } }] } as never,
+      [],
+      "m",
+      [{ path: "findings[0]", reason: "polarity", detail: 'reduced_fetal_movement is "present", but its quote reads as the normal state: "the baby moves well"' }],
+    );
+    expect(d.findings).toHaveLength(1); // kept: a check never removes a finding
+    expect(d.needsReview).toEqual(['Check this: reduced_fetal_movement is "present", but its quote reads as the normal state: "the baby moves well"']);
+  });
+});
+
 describe("httpScribe", () => {
   // A stand-in for the API, which sends its headers only once the draft is written.
   async function slowApi(delayMs: number) {
