@@ -50,8 +50,12 @@ export function splitWav(buf: Buffer, maxSeconds: number): Buffer[] {
   const f = readFormat(buf);
   const block = f.channels * (f.bits / 8);
   if (block <= 0) throw new WavError("WAV has no samples");
-  const step = Math.max(1, Math.floor(maxSeconds * f.rate)) * block;
-  if (f.dataLength <= step) return [buf];
+  const most = Math.max(1, Math.floor(maxSeconds * f.rate)) * block;
+  if (f.dataLength <= most) return [buf];
+  // Even parts: 241 s becomes 2 × 120.5 s, not 240 s + a 1 s scrap that is too short to
+  // transcribe well (or for the hub's speech gate to judge; phc-scribe ADR-0031).
+  const parts = Math.ceil(f.dataLength / most);
+  const step = Math.ceil(f.dataLength / block / parts) * block;
   const out: Buffer[] = [];
   for (let off = 0; off < f.dataLength; off += step) {
     const len = Math.min(step, f.dataLength - off);

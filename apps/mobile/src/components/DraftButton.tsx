@@ -2,6 +2,7 @@ import { m } from "motion/react";
 import { useEffect, useState } from "react";
 import type { Visit } from "@takada/protocol";
 import { useLive } from "../lib/store";
+import { jobMessage } from "../lib/errors";
 import { getLink, jobStatus, requestDraft, syncOnce, type JobStatus } from "../lib/sync";
 import { I } from "./icons";
 import { ErrorNote } from "./ui";
@@ -50,7 +51,13 @@ export function DraftButton({ visit }: { visit: Visit }) {
           {busy ? (job?.status === "running" ? "Drafting…" : `In the queue${job?.ahead ? ` · ${job.ahead} ahead` : ""}`) : visit.draft ? "Draft again" : "Draft the record"}
         </m.button>
       )}
-      {job?.status === "failed" && <ErrorNote error={`Drafting failed: ${job.error ?? "unknown error"}. Try again.`} />}
+      {job?.status === "failed" && (() => {
+        const { message, detail } = jobMessage(job.error);
+        return <>
+          <ErrorNote error={message} />
+          {detail && <p className="faint tiny" style={{ margin: "6px 2px 0" }}>For your supervisor: {detail}</p>}
+        </>;
+      })()}
       {visit.draft && (
         visit.draft.needsReview.length || !visit.findings.some((f) => f.origin === "model")
           ? <p className="err" style={{ marginTop: 12 }}>

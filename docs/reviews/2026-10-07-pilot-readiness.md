@@ -54,13 +54,13 @@ Every fix has a test, and each new test was run against the old code to confirm 
 |---|---|---|---|
 | O1 | **Model false alarm.** On "is the baby moving well? yes, the baby moves well", the shipped model wrote `reduced_fetal_movement: present` with that sentence as evidence. Grounding checks that the evidence exists, not its polarity. | High (a false danger sign), mitigated because the nurse reviews every draft. | phc-scribe: add this pattern to the error analysis, and consider a negation/polarity check in grounding (ADR). Brief the nurses on 9 Oct: every model finding must be checked. |
 | O2 | Whisper invents text from non-speech noise (pocket, crowd), not only from digital silence. B7 covers only true silence. | Medium | phc-scribe ASR: no-speech probability or a VAD gate. |
-| O3 | A recording lives only in the phone's memory until Stop. If the app is killed mid-visit, it is lost. | Medium | Persist chunks to IndexedDB every few seconds, and recover them on start. |
+| O3 | A recording lives only in the phone's memory until Stop. If the app is killed mid-visit, it is lost. | Medium | **Fixed 8 Oct:** each 1-second chunk is saved to IndexedDB as it arrives, and the next start finishes an interrupted recording (`lib/recordings.ts`; tested, and checked in Chromium by killing the page mid-recording). |
 | O4 | Audio and transcripts are kept forever on the hub and the phone. | Medium (NDPA) | A retention policy (for example, delete audio after confirmation plus N days), as an ADR. |
 | O5 | Throughput is one draft at a time: about 80–100 s warm on 4 vCPUs, plus transcription. That is roughly 30–40 visits an hour at best, and a queue builds at busy clinics. | Low for the pilot | The load test after 12 Oct (ADR-0023 §3). |
 | O6 | The phone silently drops pulled events it cannot parse (for example, a newer hub's event type). | Low | Count them and show "update the app". |
 | O7 | Events are ordered by device clocks. A phone with a wrong clock can order its confirmation before a draft. | Low | Server receive order as a tiebreak, or a clock-skew warning at pairing. |
 | O8 | Re-pairing with an existing device id takes over that id (it needs a valid code). | Low | Bind the device id to its first token, or make admin revoke the old one first. |
-| O9 | Job errors reach the nurse with their code prefix (`silent_audio: …`). | Cosmetic | Map the codes to plain messages. |
+| O9 | Job errors reach the nurse with their code prefix (`silent_audio: …`). | Cosmetic | **Fixed 8 Oct:** plain messages with the next step, with the code kept small for the supervisor (`lib/errors.ts`). Also new: while recording, the app warns after 5 s of no sound at the microphone. |
 
 ## Dry-run checklist this adds (laptop, before 9 Oct)
 1. On a pilot phone, on the clinic Wi-Fi: `https://<HUB_HOSTNAME>/healthz` opens with no certificate warning.

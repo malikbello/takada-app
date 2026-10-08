@@ -26,7 +26,9 @@ type Encounter = {
   };
 };
 
-export function toDraft(record: Encounter, dropped: { path?: string; reason?: string; detail?: string }[], model: string): Omit<Draft, "transcript"> {
+type Note = { path?: string; reason?: string; detail?: string };
+
+export function toDraft(record: Encounter, dropped: Note[], model: string, checks: Note[] = []): Omit<Draft, "transcript"> {
   const findings: Finding[] = (record.findings ?? [])
     .filter((f) => ["present", "absent", "possible", "historical"].includes(f.assertion))
     .map((f) => ({ concept: f.concept, assertion: f.assertion as Finding["assertion"], evidence: f.evidence?.text?.slice(0, 500), origin: "model" as const }));
@@ -36,7 +38,13 @@ export function toDraft(record: Encounter, dropped: { path?: string; reason?: st
   if (v.temperature) vitals.temperature_c = v.temperature.unit === "Cel" ? v.temperature.value : Math.round(((v.temperature.value - 32) * 5 / 9) * 10) / 10;
   if (v.weight) vitals.weight_kg = v.weight.value;
   if (v.pulse) vitals.pulse = v.pulse.value;
-  return { findings, vitals, model, needsReview: dropped.map((d) => `${d.path ?? "field"}: ${d.reason ?? "needs review"}${d.detail ? ` (${d.detail})` : ""}`) };
+  // Checks (phc-scribe ADR-0030) keep the field and say why to look again; their detail is
+  // already a sentence for the health worker.
+  const needsReview = [
+    ...checks.map((c) => `Check this: ${c.detail || c.path || "a finding"}`),
+    ...dropped.map((d) => `${d.path ?? "field"}: ${d.reason ?? "needs review"}${d.detail ? ` (${d.detail})` : ""}`),
+  ];
+  return { findings, vitals, model, needsReview };
 }
 
 // 15 minutes: on a laptop CPU the API may take up to 10 minutes for one long draft (phc-scribe
@@ -74,10 +82,10 @@ export function httpScribe(base: string, apiKey?: string, proxy?: { key: string;
       const body = JSON.stringify(language && language !== "auto" ? { text, language } : { text });
       const out = (await call("/v1/extract", { method: "POST", headers: headers("application/json"), body })) as {
         record: Encounter;
-        grounding: { dropped: { path?: string; reason?: string; detail?: string }[] };
+        grounding: { dropped: Note[]; checks?: Note[] };
         versions?: { model?: string };
       };
-      return toDraft(out.record, out.grounding?.dropped ?? [], out.versions?.model ?? "phc-scribe");
+      return toDraft(out.record, out.grounding?.dropped ?? [], out.versions?.model ?? "phc-scribe", out.grounding?.checks ?? []);
     },
   };
 }

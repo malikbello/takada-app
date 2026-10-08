@@ -181,7 +181,7 @@ describe("drafting queue", () => {
     await runJob(db, fake({ transcribe: async () => (calls++, "spoken words") }), claimNext(db)!, "hub-1");
     expect(calls).toBe(1);
     const draft = (await app.inject({ method: "GET", url: "/v1/sync/pull", headers: auth(p.token) })).json().events.at(-1);
-    expect(draft.payload.needsReview[0]).toMatch(/1 recording was silent/);
+    expect(draft.payload.needsReview[0]).toMatch(/1 recording had no speech the hub could hear/);
 
     // only silence and no notes: the job fails with a reason the nurse can act on
     const v2 = await pair("PHC-1", "phone-2");
@@ -194,6 +194,20 @@ describe("drafting queue", () => {
     const status = (await app.inject({ method: "GET", url: `/v1/jobs/${job.id}`, headers: auth(v2.token) })).json();
     expect(status.status).toBe("failed");
     expect(status.error).toMatch(/silent_audio/);
+  });
+
+  it("treats an empty transcript (the hub heard no speech) as no speech, not as text", async () => {
+    const p = await pair();
+    const [start] = await visitEvents(p.deviceId, p.facility);
+    await app.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: [start] } });
+    const id = crypto.randomUUID();
+    await app.inject({ method: "PUT", url: `/v1/audio/${start!.visitId}/${id}`, headers: { ...auth(p.token), "content-type": "audio/wav" }, payload: pcmWav(5) });
+    const job = (await app.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId: start!.visitId, language: "yo", audioIds: [id] } })).json();
+    let extracted = false;
+    await runJob(db, fake({ transcribe: async () => "  ", extract: async () => ((extracted = true), { findings: [], vitals: {}, model: "m", needsReview: [] }) }), claimNext(db)!, "hub-1");
+    expect(extracted).toBe(false);
+    const status = (await app.inject({ method: "GET", url: `/v1/jobs/${job.id}`, headers: auth(p.token) })).json();
+    expect(status.error).toMatch(/^silent_audio: no speech could be heard/);
   });
 
   it("drafts a long visit in parts under the API's text limit and merges them", async () => {

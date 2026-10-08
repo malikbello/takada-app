@@ -2,10 +2,9 @@ import { AnimatePresence, m } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { CONCEPTS } from "@takada/clinical";
 import type { Visit, Vitals } from "@takada/protocol";
-import { db } from "../lib/db";
 import { ease, spring } from "../lib/motion";
 import { append, type Profile } from "../lib/store";
-import { toWav16k } from "../lib/wav";
+import { finishRecording, openRecording, saveChunk } from "../lib/recordings";
 import { I } from "./icons";
 import { Disclosure, ErrorNote } from "./ui";
 
@@ -22,6 +21,8 @@ export function Recorder({ visit, profile }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [capped, setCapped] = useState(false);
+  const [noSound, setNoSound] = useState(false);
+  const lastSound = useRef(0);
   const canvas = useRef<HTMLCanvasElement>(null);
   const t0 = useRef(0);
   const raf = useRef(0);
@@ -34,11 +35,16 @@ export function Recorder({ visit, profile }: Props) {
     ctx.createMediaStreamSource(stream).connect(an);
     const data = new Uint8Array(an.frequencyBinCount);
     const loop = () => {
+      an.getByteTimeDomainData(data);
+      // Any sound at all (a quiet room still moves the signal); a covered or broken
+      // microphone gives a flat line, and the nurse is told while there is time to fix it.
+      let peak = 0;
+      for (const x of data) peak = Math.max(peak, Math.abs(x - 128));
+      if (peak >= 2) lastSound.current = Date.now();
       const c = canvas.current;
       if (c) {
         const g = c.getContext("2d")!;
         const w = (c.width = c.clientWidth * devicePixelRatio), h = (c.height = c.clientHeight * devicePixelRatio);
-        an.getByteTimeDomainData(data);
         g.clearRect(0, 0, w, h);
         const bars = 40, bw = w / bars;
         const grad = g.createLinearGradient(0, 0, w, 0);
@@ -69,7 +75,10 @@ export function Recorder({ visit, profile }: Props) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       const mr = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
+      // Every chunk goes to the phone's storage as it arrives (lib/recordings.ts).
+      const recId = await openRecording({ visitId: visit.id, deviceId: profile.deviceId, worker: profile.worker, mime: mr.mimeType || "audio/webm" });
+      let seq = 0;
+      let saved = Promise.resolve();
       const stopWave = drawWave(stream);
       // Keep the screen on while recording: when it turns off, the phone may pause the app
       // and the rest of the visit would not be recorded.
@@ -78,30 +87,36 @@ export function Recorder({ visit, profile }: Props) {
         if (document.visibilityState === "visible" && mr.state === "recording") lock = await navigator.wakeLock?.request("screen").catch(() => null) ?? null;
       };
       document.addEventListener("visibilitychange", relock);
+      lastSound.current = Date.now();
+      setNoSound(false);
       const timer = window.setInterval(() => {
         const s = Math.round((Date.now() - t0.current) / 1000);
         setSecs(s);
+        setNoSound(Date.now() - lastSound.current > 5000);
         if (s >= MAX_SECONDS && mr.state === "recording") {
           setCapped(true);
           mr.stop();
         }
       }, 250);
-      mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      mr.ondataavailable = (e) => {
+        if (!e.data.size) return;
+        const n = seq++;
+        saved = saved.then(() => saveChunk(recId, n, e.data)).catch((err: Error) => setError(`Recording could not be saved on this phone: ${err.message}`));
+      };
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         clearInterval(timer);
+        setNoSound(false);
         document.removeEventListener("visibilitychange", relock);
         void lock?.release().catch(() => undefined);
         stopWave();
         setRec(null);
         setSaving(true);
-        const id = crypto.randomUUID();
         try {
-          const { wav, seconds } = await toWav16k(new Blob(chunks, { type: mr.mimeType || "audio/webm" }));
-          await db.blobs.put({ id, visitId: visit.id, blob: wav, createdAt: new Date().toISOString(), uploaded: 0 });
-          await append({ ...who(visit, profile), type: "audio.captured", payload: { blobId: id, seconds: Math.round(seconds), mime: "audio/wav" } });
+          await saved; // the last chunk arrives just before onstop
+          await finishRecording(recId);
         } catch (e) {
-          setError(`The recording could not be saved: ${(e as Error).message}`);
+          setError(`The recording could not be converted: ${(e as Error).message}. It is kept on this phone; reopen the app to try again.`);
         } finally {
           setSaving(false);
         }
@@ -135,7 +150,9 @@ export function Recorder({ visit, profile }: Props) {
           <m.div key="live" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease }} style={{ marginTop: 16 }}>
             <div className="timer" aria-live="polite">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</div>
             <canvas ref={canvas} className="wave" aria-hidden="true" />
-            <p className="muted small" style={{ margin: "6px 0 0" }}>Listening. Talk with her as usual.</p>
+            {noSound
+              ? <p className="err" role="alert" style={{ margin: "6px 0 0" }}>No sound is reaching the microphone. Check that nothing covers it, or stop and type notes.</p>
+              : <p className="muted small" style={{ margin: "6px 0 0" }}>Listening. Talk with her as usual.</p>}
           </m.div>
         ) : (
           <m.div key="idle" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease }} style={{ marginTop: 18 }}>
