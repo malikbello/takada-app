@@ -3,7 +3,7 @@
 // available for the supervisor (shown small, under the message).
 
 const MESSAGES: Record<string, string> = {
-  silent_audio: "The recording has no sound. Check that nothing covers the phone's microphone, then record again or type notes.",
+  silent_audio: "No speech could be heard in the recording. Check that nothing covers the phone's microphone, hold it nearer, then record again or type notes.",
   nothing_to_draft: "There is nothing to draft yet. Record the visit or add a note first.",
   audio_missing: "A recording did not reach the hub. Stay on the clinic Wi-Fi, then tap Draft again.",
   visit_missing: "The hub has not received this visit yet. Stay on the clinic Wi-Fi, then tap Draft again.",

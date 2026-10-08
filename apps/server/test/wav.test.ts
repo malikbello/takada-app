@@ -15,7 +15,7 @@ describe("splitWav", () => {
   it("splits a 10-minute visit into valid segments under the API limit, losing no audio", () => {
     const w = pcmWav(600);
     const segs = splitWav(w, 240);
-    expect(segs.map((s) => readFormat(s).dataLength / 32_000)).toEqual([240, 240, 120]);
+    expect(segs.map((s) => readFormat(s).dataLength / 32_000)).toEqual([200, 200, 200]); // even parts
     for (const s of segs) {
       expect(s.length).toBeLessThan(API_LIMIT);
       expect(readFormat(s)).toMatchObject({ channels: 1, rate: 16_000, bits: 16, dataStart: 44 });
@@ -54,5 +54,15 @@ describe("isSilent", () => {
     for (let i = 44; i < quiet.length; i += 2) quiet.writeInt16LE(((i / 2) % 9) - 4, i); // hiss, about -80 dBFS
     expect(isSilent(quiet)).toBe(true);
     expect(isSilent(pcmWav(2))).toBe(false);
+  });
+});
+
+describe("splitWav, even parts", () => {
+  it("never leaves a scrap: 241 s becomes two parts of about 120 s", () => {
+    const parts = splitWav(pcmWav(241), 240);
+    expect(parts).toHaveLength(2);
+    const secs = parts.map((p) => readFormat(p).dataLength / 32_000);
+    expect(Math.min(...secs)).toBeGreaterThan(120);
+    expect(secs.reduce((a, b) => a + b, 0)).toBeCloseTo(241, 3); // nothing lost
   });
 });

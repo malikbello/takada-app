@@ -64,7 +64,7 @@ import { jobMessage } from "../src/lib/errors";
 describe("draft errors", () => {
   it("tell the nurse what happened and what to do, keeping the detail for the supervisor", () => {
     const m = jobMessage("silent_audio: the recording is silent: check the phone's microphone");
-    expect(m.message).toMatch(/no sound.*microphone/);
+    expect(m.message).toMatch(/No speech could be heard.*microphone/);
     expect(m.detail).toMatch(/^silent_audio/);
     expect(jobMessage("upstream_502: phc-scribe /v1/extract returned 502").message).toMatch(/ran into a problem/);
     expect(jobMessage("something_new: x").message).toMatch(/Drafting failed/);

@@ -100,17 +100,22 @@ export async function runJob(db: DatabaseSync, scribe: Scribe, job: JobRow, node
         throw new UpstreamError("audio_invalid", `audio ${id}: ${(e as Error).message}`, false);
       }
       const texts: string[] = [];
-      for (const seg of segments) if (!isSilent(seg)) texts.push(await scribe.transcribe(seg, job.language));
+      for (const seg of segments) {
+        if (isSilent(seg)) continue;
+        // An empty transcript means the hub's speech gate heard no speech (phc-scribe ADR-0031).
+        const text = (await scribe.transcribe(seg, job.language)).trim();
+        if (text) texts.push(text);
+      }
       if (!texts.length) {
         silent++;
         continue;
       }
       parts.push(texts.join(" ").trim());
     }
-    if (silent) review.push(`${silent} recording${silent > 1 ? "s were" : " was"} silent and not used: check the phone's microphone`);
+    if (silent) review.push(`${silent} recording${silent > 1 ? "s" : ""} had no speech the hub could hear (silent, or only noise), so ${silent > 1 ? "they were" : "it was"} not used`);
     const transcript = [...parts, ...v.notes].join("\n").trim();
     if (!transcript) {
-      if (silent) throw new UpstreamError("silent_audio", "the recording is silent: check the phone's microphone, then record again or type notes", false);
+      if (silent) throw new UpstreamError("silent_audio", "no speech could be heard in the recording (silent, or only noise)", false);
       throw new UpstreamError("nothing_to_draft", "no recording or notes for this visit", false);
     }
     const lang = job.language === "auto" ? null : job.language;
