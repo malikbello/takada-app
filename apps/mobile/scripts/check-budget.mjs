@@ -4,9 +4,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
+import { fileURLToPath } from "node:url";
 
 const LIMIT = 200 * 1024;
-const dist = new URL("../dist/", import.meta.url).pathname;
+// fileURLToPath, not .pathname: on Windows .pathname is "/C:/..." and join() made "C:\C:\...".
+const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const html = readFileSync(join(dist, "index.html"), "utf8");
 const files = [...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);
 let total = 0;
