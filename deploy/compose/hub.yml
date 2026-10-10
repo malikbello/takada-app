@@ -71,8 +71,10 @@ services:
     image: caddy:2.10-alpine
     restart: unless-stopped
     ports: ["443:443", "80:80"]
-    command: ["caddy", "reverse-proxy", "--from", "${HUB_HOSTNAME:-takada-hub.local}", "--to", "takada:8080", "--internal-certs"]
-    volumes: [caddy-data:/data]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    environment:
+      HUB_HOSTNAME: ${HUB_HOSTNAME:-takada-hub.local}
+    volumes: [caddy-data:/data, ./Caddyfile:/etc/caddy/Caddyfile:ro]
     depends_on: [takada]
 
 volumes:

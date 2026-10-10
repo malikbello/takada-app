@@ -1,0 +1,15 @@
+# Clinic hub HTTPS proxy (Caddy). HUB_HOSTNAME comes from hub.env.
+#
+# default_sni: a phone that opens https://<IP-address> sends no SNI, so Caddy could not
+# pick a certificate and closed the handshake. This affected every hub on an IP address,
+# including the Windows hotspot setup (192.168.137.1) in docs/operations.md. Found on the
+# laptop dry run, 10 Oct. With default_sni, an SNI-less connection gets the hub's
+# certificate; named hubs (takada-hub.local) are unaffected.
+{
+	default_sni {$HUB_HOSTNAME}
+}
+
+{$HUB_HOSTNAME} {
+	tls internal
+	reverse_proxy takada:8080
+}
