@@ -18,7 +18,17 @@ import { Welcome } from "./screens/Welcome";
 import "./styles.css";
 
 // The web app installs a service worker for offline use; the native apps carry their files.
-if (!isNative) registerSW({ immediate: true });
+// A new version otherwise waits until every tab of the app is closed (a phone kept the old app
+// on 11 Oct), so the nurse is told and updates with one tap.
+let updateReady = false;
+const onUpdateReady = new Set<() => void>();
+const updateSW = isNative ? undefined : registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    updateReady = true;
+    onUpdateReady.forEach((f) => f());
+  },
+});
 void startNative();
 applyEffects();
 // The phone is the only copy of a record until it syncs: ask the browser to keep our data.
@@ -29,6 +39,12 @@ function App() {
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
   const [error, setError] = useState<Error | null>(null);
   const [recovered, setRecovered] = useState<string | null>(null);
+  const [update, setUpdate] = useState(updateReady);
+  useEffect(() => {
+    const ready = () => setUpdate(true);
+    onUpdateReady.add(ready);
+    return () => void onUpdateReady.delete(ready);
+  }, []);
   useEffect(() => {
     getProfile().then(setProfile).catch(setError);
     // Finish any recording the app was closed in the middle of (lib/recordings.ts).
@@ -50,6 +66,12 @@ function App() {
       <button type="button" className="ok-note" role="status" onClick={() => setRecovered(null)}
         style={{ position: "fixed", top: 12, left: 16, right: 16, zIndex: 50, textAlign: "left", border: 0, font: "inherit" }}>
         {recovered} <span className="faint tiny">Tap to close.</span>
+      </button>
+    )}
+    {update && !recovered && (
+      <button type="button" className="ok-note" role="status" onClick={() => void updateSW?.(true)}
+        style={{ position: "fixed", top: 12, left: 16, right: 16, zIndex: 50, textAlign: "left", border: 0, font: "inherit" }}>
+        <b>A new version of Tákàdá is ready.</b> Tap to update. <span className="faint tiny">Finish any recording first; your visits stay on this phone.</span>
       </button>
     )}
     <AnimatePresence mode="wait" initial={false}>
