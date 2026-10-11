@@ -21,6 +21,9 @@ services:
       # (apps/mobile/capacitor.config.ts), a different origin from the hub, so the hub must
       # allow them; the web app, served by the hub itself, needs nothing.
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost,capacitor://localhost}
+      # Recordings and full transcripts are deleted after these days (phc-scribe ADR-0033).
+      RETAIN_AUDIO_DAYS: ${RETAIN_AUDIO_DAYS:-7}
+      RETAIN_UNCONFIRMED_DAYS: ${RETAIN_UNCONFIRMED_DAYS:-30}
     volumes: [takada-data:/data]
     depends_on: [scribe]
     read_only: true
@@ -38,6 +41,9 @@ services:
       PHC_LLAMACPP_URL: http://llm:8080
       PHC_ASR: ${PHC_ASR:-off}
       PHC_ASR_MODELS: ${PHC_ASR_MODELS:-}
+      # With PHC_ASR=ct2: the int8 speech folders, one model at a time as each passes its
+      # checks (phc-scribe ADR-0032); every other language keeps its fp32 model above.
+      PHC_ASR_INT8_MODELS: ${PHC_ASR_INT8_MODELS:-}
       # Never reach the internet for models: everything comes from the models volume.
       HF_HUB_OFFLINE: "1"
       HF_HOME: /models/hf
