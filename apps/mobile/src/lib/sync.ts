@@ -3,7 +3,7 @@
 // in the app; nothing is deleted from the phone because of a sync.
 
 import { useEffect, useState } from "react";
-import { VisitEvent } from "@takada/protocol";
+import { VisitEvent, type Visit } from "@takada/protocol";
 import { db } from "./db";
 
 export type Link = { url: string; token: string; facility: string; node: string };
@@ -163,8 +163,24 @@ export async function requestDraft(visitId: string, language: string): Promise<J
   const audioIds = blobs.map((b) => b.id);
   const res = await api(link, "/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitId, language, audioIds }) });
   const job = (await res.json()) as JobStatus;
-  await db.settings.put({ key: `job:${visitId}`, value: job.id });
+  await db.settings.bulkPut([{ key: `job:${visitId}`, value: job.id }, { key: `jobAudio:${visitId}`, value: audioIds.join(",") }]);
   return job;
+}
+
+/** The recordings the latest draft request covered (empty if none was asked from this phone). */
+export async function draftedAudio(visitId: string): Promise<string[]> {
+  return ((await db.settings.get(`jobAudio:${visitId}`))?.value ?? "").split(",").filter(Boolean);
+}
+
+/** True when a visit has a recording no draft has been asked for yet, so the phone asks by
+ * itself: the nurse never has to remember, and a later "Record more" is drafted with the rest
+ * (11 Oct hub test: two visits were confirmed before anyone asked for a draft). A visit drafted
+ * before requests were kept on file (a draft, nothing on file) counts as drafted. */
+export function hasUndraftedAudio(visit: Pick<Visit, "audio" | "draft" | "confirmed">, drafted: string[]): boolean {
+  if (visit.confirmed || !visit.audio.length) return false;
+  if (visit.draft && !drafted.length) return false;
+  const done = new Set(drafted);
+  return visit.audio.some((a) => !done.has(a.blobId));
 }
 
 export async function jobStatus(visitId: string): Promise<JobStatus | null> {

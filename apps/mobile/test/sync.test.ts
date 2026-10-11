@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../src/lib/db";
 import { append, getProfile, saveProfile } from "../src/lib/store";
-import { pair, requestDraft, syncOnce, timeoutFor } from "../src/lib/sync";
+import { draftedAudio, hasUndraftedAudio, pair, requestDraft, syncOnce, timeoutFor } from "../src/lib/sync";
 
 // A fake hub with the real server's rules: a visit's events are refused until its start is
 // known; one recording can be made to fail.
@@ -113,6 +113,31 @@ describe("sync", () => {
     await first;
     expect(job.status).toBe("queued");
     expect(hub.stored.filter((e) => e.visitId === visitId)).toHaveLength(2);
+  });
+
+  it("a draft request keeps the recordings it covered on file", async () => {
+    const p = await saveProfile("Nurse A", "PHC-1");
+    fakeHub();
+    await pair("http://hub.test", "abcd2345", p.deviceId, p.worker);
+    const visitId = await newVisit(p.deviceId, 0);
+    const a = crypto.randomUUID(), b = crypto.randomUUID();
+    const blob = new Blob([new Uint8Array(100)], { type: "audio/wav" });
+    await db.blobs.bulkPut([a, b].map((id) => ({ id, visitId, blob, createdAt: new Date().toISOString(), uploaded: 0 })));
+    expect(await draftedAudio(visitId)).toEqual([]);
+    await requestDraft(visitId, "en");
+    expect((await draftedAudio(visitId)).sort()).toEqual([a, b].sort());
+  });
+
+  it("asks for a draft by itself only for recordings no draft has covered", () => {
+    const clip = (blobId: string) => ({ blobId, seconds: 20, mime: "audio/wav" });
+    const draft = { model: "llamacpp:phc-scribe", needsReview: [] };
+    const confirmed = { at: "2026-10-11T10:04:01Z", by: "Nurse A", recordHash: "h" };
+    expect(hasUndraftedAudio({ audio: [], draft: null, confirmed: null }, [])).toBe(false); // nothing recorded
+    expect(hasUndraftedAudio({ audio: [clip("a")], draft: null, confirmed: null }, [])).toBe(true); // just stopped recording
+    expect(hasUndraftedAudio({ audio: [clip("a")], draft: null, confirmed: null }, ["a"])).toBe(false); // already asked
+    expect(hasUndraftedAudio({ audio: [clip("a"), clip("b")], draft, confirmed: null }, ["a"])).toBe(true); // "Record more"
+    expect(hasUndraftedAudio({ audio: [clip("a")], draft: null, confirmed }, [])).toBe(false); // confirmed: never redrafted
+    expect(hasUndraftedAudio({ audio: [clip("a")], draft, confirmed: null }, [])).toBe(false); // drafted before requests were kept
   });
 
   it("gives large recordings time to upload", () => {

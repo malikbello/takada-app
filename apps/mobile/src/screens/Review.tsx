@@ -8,11 +8,14 @@ import { spring } from "../lib/motion";
 import { go } from "../lib/nav";
 import { append, useLive, visitEvents, type Profile } from "../lib/store";
 import { label, referralNote, vitalsLine } from "../lib/summary";
+import { draftedAudio, getLink, hasUndraftedAudio } from "../lib/sync";
 
 const ASSERT: Record<string, string> = { present: "Present", absent: "Absent", possible: "Possible", historical: "Past pregnancy" };
 
 export function Review({ id, profile }: { id: string; profile: Profile }) {
   const { data: events, error } = useLive(() => visitEvents(id), [id]);
+  const { data: link } = useLive(getLink);
+  const { data: drafted } = useLive(() => draftedAudio(id), [id]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [amending, setAmending] = useState(false);
@@ -23,6 +26,9 @@ export function Review({ id, profile }: { id: string; profile: Profile }) {
   if (!visit) return <main className="page">{visit === null ? <ErrorNote error="Visit not found." /> : null}</main>;
   const who = { visitId: visit.id, deviceId: profile.deviceId, worker: profile.worker };
   const confirmedEvent = events?.filter((e) => e.type === "record.confirmed").at(-1);
+  // Never blocks: a hub can be down and the record must still be saved. But confirming before
+  // the draft is back saves only what was typed (11 Oct hub test), so say so plainly.
+  const draftPending = !!link && !visit.confirmed && visit.audio.length > 0 && (!visit.draft || hasUndraftedAudio(visit, drafted ?? []));
 
   async function remove(concept: string, assertion: "present" | "absent" | "possible" | "historical") {
     try {
@@ -73,6 +79,12 @@ export function Review({ id, profile }: { id: string; profile: Profile }) {
           )}
         </AnimatePresence>
         <DangerBanner flags={flagsOf(visit)} note={() => referralNote(visit, profile.facility, profile.worker)} />
+        {draftPending && (
+          <section className="followup">
+            <div className="overline" style={{ color: "var(--honey)" }}>AI draft not back yet</div>
+            <p className="small">The recording is still being turned into the record at the clinic hub (usually 3 to 5 minutes). Wait for it, or confirm only what you entered yourself.</p>
+          </section>
+        )}
         <section className="card">
           <div className="overline">Findings</div>
           {visit.findings.length === 0 && <p className="faint">No findings recorded.</p>}
