@@ -1,0 +1,17 @@
+Takada
+Copyright 2026 Malik Bello and the PHC Scribe contributors.
+
+The source code in this repository is licensed under the Apache License, Version 2.0
+(see LICENSE).
+
+Third-party components shipped in the app
+-----------------------------------------
+- Plus Jakarta Sans (via @fontsource-variable/plus-jakarta-sans): SIL Open Font License 1.1.
+- npm dependencies keep their own licences (pnpm-lock.yaml lists them).
+
+Models
+------
+The clinic hub runs N-ATLaS and the N-ATLaS ASR models (and PHC Scribe derivatives of
+them). They are not part of this repository and are governed by the N-ATLaS Terms of Use
+("Powered by Awarri"; 1,000 active end-users per rolling 30 days without a commercial
+licence from Awarri Technologies).

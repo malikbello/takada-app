@@ -46,4 +46,5 @@ pnpm install
 Clinical content is a **draft, not for clinical use**, until every rule and visit-guide item is signed off by the clinical adviser.
 
 ## Licence
-All rights reserved until a licence is chosen. N-ATLaS models and derivatives are governed by the N-ATLaS Terms of Use.
+- **Code:** [Apache License 2.0](LICENSE).
+- **Models** (on the hub, not in this repository): N-ATLaS and its derivatives are governed by the N-ATLaS Terms of Use. See [`NOTICE`](NOTICE).
