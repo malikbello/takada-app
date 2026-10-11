@@ -1,14 +1,24 @@
 # Takada: status and handoff
 
-_Last updated: 8 Oct 2026 (session 9, pilot hardening). The project-wide handoff is phc-scribe `docs/status.md` → "START HERE (7 Oct)": read that first. This file covers only this repo._
+_Last updated: 11 Oct 2026 (session 11). The project-wide handoff is phc-scribe `docs/status.md` → "START HERE (11 Oct)": read that first. This file covers only this repo._
 
 ## Resume prompt (paste into a new session)
-> Read `docs/status.md` in `malikbello/takada-app`, then phc-scribe `docs/status.md` "START HERE (7 Oct)". Follow the phc-scribe working agreement:
+> Read `docs/status.md` in `malikbello/takada-app`, then phc-scribe `docs/status.md` "START HERE (11 Oct)". Follow the phc-scribe working agreement:
 > - commits as `malikbello <139644523+malikbello@users.noreply.github.com>`, no AI attribution;
 > - no secrets in chat, code or logs;
 > - `./scripts/ci_local.sh` before every push.
 >
 > Then continue from "Next steps" below. Ask me before anything outward-facing (app stores, public URLs, the pilot).
+
+## State (11 Oct)
+- **Merged on 11 Oct, from the first full phone test** (Galaxy S22 → laptop hotspot → hub):
+  - PR #6: the draft starts by itself when recording stops; Review says "AI draft not back yet";
+  - PR #7: consent tick before recording; retention of recordings and transcripts (phc-scribe ADR-0033);
+  - PR #8: "update available" banner; `hub.yml` passes `PHC_ASR_INT8_MODELS` and the retention days;
+  - PRs #9 and #11: operations with measured hub numbers, the Windows one-time setup, int8 speech through `fetch_models`;
+  - PR #10: Apache-2.0 licence for the code.
+- **The laptop hub** runs `main`, with int8 English speech (`PHC_ASR=ct2`). Its secrets were rotated on 11 Oct.
+- **Vercel** (11 Oct): Root Directory `apps/mobile`, and git-triggered builds skipped (`exit 0`). The preview is deployed from the built `dist/` as documented in operations, so pushes no longer show a failed Vercel check. Deployment Protection is on.
 
 ## State (7 Oct, evening)
 - **`main`:** the PWA, the hub and cloud server, the Android and iPhone apps (Capacitor 8, ADR-0027), the hub image and the llama.cpp b11387 build the model was evaluated with (merged as PR #1). CI and the `native` workflow are green.
