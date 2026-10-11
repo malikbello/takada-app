@@ -78,7 +78,7 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
 5. **Windows `curl.exe`** cannot check revocation for the hub's own certificate authority. Use `curl.exe --ssl-no-revoke --cacert takada-hub-root.crt https://192.168.137.1/healthz`.
 
 **Faster speech with int8 (optional, recommended):**
-- Copy the int8 folders (CTranslate2; `model.bin`, `config.json`, `vocabulary.json`, plus the tokenizer files of the matching fp32 model) into the `models` volume under `asr-int8/<language>`.
+- Step 4's `fetch_models` also installs the int8 builds into `asr-int8/en`, `asr-int8/yo` and `asr-int8/pcm`, each checked to be complete. On its own: `... scribe python -m phc_scribe.fetch_models --only int8`.
 - Set these in `hub.env`:
   ```
   PHC_ASR=ct2
@@ -94,7 +94,7 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
    docker build -f ../phc-scribe/deploy/api.Dockerfile -t phc-scribe-api:local ../phc-scribe
    docker compose -f deploy/compose/hub.yml build llm     # llama.cpp b11387, about 10 minutes
    ```
-4. Fetch the models into the `models` volume, once, while online (about 7 GB). Needs a Hugging Face token with read access to the private model repos, for this one run only:
+4. Fetch the models into the `models` volume, once, while online (about 8 GB with the int8 builds). The model repos are gated, with automatic approval: accept the N-ATLaS Terms on each model page once, then use a Hugging Face read token of that account, for this one run only:
    ```bash
    docker compose -f deploy/compose/hub.yml --env-file deploy/compose/hub.env \
      run --rm -e HF_TOKEN -e HF_HUB_OFFLINE=0 scribe python -m phc_scribe.fetch_models
