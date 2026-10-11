@@ -3,7 +3,7 @@
 // in the app; nothing is deleted from the phone because of a sync.
 
 import { useEffect, useState } from "react";
-import { VisitEvent, type Visit } from "@takada/protocol";
+import { reduce, VisitEvent, type Visit } from "@takada/protocol";
 import { db } from "./db";
 
 export type Link = { url: string; token: string; facility: string; node: string };
@@ -133,6 +133,8 @@ async function runSync(): Promise<void> {
       await db.settings.put({ key: "cursor", value: String(after) });
       if (out.events.length < 500) break;
     }
+    // 4. the phone's copy of a recording goes once the hub has it and the record is confirmed
+    await dropConfirmedAudio();
     const uploadError = failed.length ? `${failed.length} recording${failed.length > 1 ? "s" : ""} could not be sent to the hub (${failed[0]}). They are safe on this phone; the next sync tries again.` : null;
     set({ at: new Date().toISOString(), error: uploadError, rejected });
   } catch (e) {
@@ -160,11 +162,31 @@ export async function requestDraft(visitId: string, language: string): Promise<J
       : state.error ?? "Part of this visit has not reached the hub yet. Stay on the clinic Wi-Fi and try again.",
     );
   }
-  const audioIds = blobs.map((b) => b.id);
+  // Recordings the phone has already handed over and deleted (ADR-0033) are still the hub's.
+  const captured = (await db.events.where("visitId").equals(visitId).filter((e) => e.type === "audio.captured").toArray())
+    .map((e) => (e.payload as { blobId: string }).blobId);
+  const audioIds = [...new Set([...blobs.map((b) => b.id), ...captured])];
   const res = await api(link, "/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visitId, language, audioIds }) });
   const job = (await res.json()) as JobStatus;
   await db.settings.bulkPut([{ key: `job:${visitId}`, value: job.id }, { key: `jobAudio:${visitId}`, value: audioIds.join(",") }]);
   return job;
+}
+
+/** ADR-0033: delete the phone's copy of each recording the hub has stored, once the visit's
+ * confirmation has reached the hub too. Until then the phone may be the only copy. */
+export async function dropConfirmedAudio(): Promise<number> {
+  const uploaded = await db.blobs.where("uploaded").equals(1).toArray();
+  let dropped = 0;
+  for (const visitId of new Set(uploaded.map((b) => b.visitId))) {
+    const events = await db.events.where("visitId").equals(visitId).toArray();
+    const v = reduce(events);
+    const confirmation = events.filter((e) => e.type === "record.confirmed").at(-1);
+    if (!v?.confirmed || !confirmation || confirmation.synced !== 1) continue;
+    const ids = uploaded.filter((b) => b.visitId === visitId).map((b) => b.id);
+    await db.blobs.bulkDelete(ids);
+    dropped += ids.length;
+  }
+  return dropped;
 }
 
 /** The recordings the latest draft request covered (empty if none was asked from this phone). */

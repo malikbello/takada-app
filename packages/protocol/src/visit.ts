@@ -12,6 +12,8 @@ export type Visit = {
   language: string;
   firstContact: boolean | null;
   weeks: number | null;
+  /** She agreed to the recording (ADR-0033); undefined on visits started before it was asked. */
+  recordingConsent?: boolean;
   startedAt: string;
   notes: string[];
   transcript: string;

@@ -132,6 +132,15 @@ export function Recorder({ visit, profile }: Props) {
   }
 
   const total = visit.audio.reduce((n, a) => n + a.seconds, 0);
+  // Asked when the visit started (ADR-0033); visits from before then have no answer and record as before.
+  if (visit.recordingConsent === false && !rec) {
+    return (
+      <section className="card center" style={{ background: "var(--brand-soft)", borderColor: "transparent" }}>
+        <div className="h" style={{ fontSize: 19 }}>Recording is off for this visit</div>
+        <p className="muted small" style={{ margin: "4px 0 0" }}>She did not agree to the recording. Type notes below; the danger signs and questions still work.</p>
+      </section>
+    );
+  }
   return (
     <section className="card center" style={{ background: "var(--brand-soft)", borderColor: "transparent", paddingTop: 26 }}>
       <div style={{ display: "grid", placeItems: "center" }}>
