@@ -41,22 +41,50 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
             ── Caddy: HTTPS on the local network
       │  only when any internet appears (mobile data, once a day is enough)
       ▼
- cloud copy (optional) → FHIR / DHIS2
+ cloud copy (optional) → FHIR R4 export (DHIS2 reporting is planned)
 ```
 
 **What runs where:**
 - **On the phone, always offline:** recording, the visit guide (what to ask next, the summary so far, follow-ups) and the danger-sign rules. A danger sign is flagged on the phone even if the hub is off.
 - **On the hub, offline:** speech to text (fine-tuned N-ATLaS ASR, Whisper-Small) and the note draft (fine-tuned N-ATLaS 8B, 4-bit, llama.cpp on the CPU). The draft returns to the phone, and the nurse confirms it.
-- **In the cloud, only when online:** a second copy of the records and reporting (FHIR, DHIS2).
+- **In the cloud, only when online:** a second copy of the records, and the FHIR R4 export.
 
-**Hardware (reference: Dell Latitude 5400, i7-8665U, 16 GB RAM, no GPU):**
-- 16 GB RAM: the 8B model takes about 5 GB in 4-bit. 8 GB laptops cannot run it.
-- About 25 GB free disk for models, images and records.
+**Hardware (reference: Dell Latitude 5400, i7-8665U, 16 GB RAM, no GPU), measured 10–11 Oct:**
+- **16 GB RAM.** The 8B note model takes about 5.5 GB in 4-bit. Speech takes 3.9 GB with all three fp32 models loaded, or **1.9 GB with the int8 models** (phc-scribe ADR-0032). 8 GB laptops cannot run the 8B note model; a 3-bit version was tested and rejected, so they wait for a distilled model.
+- **About 25 GB free disk** for models, images and records.
 - **Speed:**
-  - Speech to text runs at roughly real time on 4 CPU cores (a 6 s clip takes about 8 s), so a 10-minute visit takes about 13 minutes.
-  - The note draft is not measured yet (laptop latency is scheduled for 7 Oct).
-  - Drafts are queued, so the nurse carries on with the next patient. One hub serves several nurses at a small clinic; the load test will give the number per hardware tier.
+  - **Speech to text:** fp32 is slower than real time (a 20 s recording takes about 56 s). **int8 takes about 6 s** for the same recording (`PHC_ASR=ct2`, below).
+  - **Note draft:** about 2 minutes at the median, 4 minutes at p95. The first draft after start-up takes about 7 minutes, so send one warm-up visit before clinic hours.
+  - Drafts are queued: the draft starts by itself when the nurse stops recording, and she carries on. From these times, one drafting worker handles roughly 15–25 visits an hour; the load test will confirm the number per hardware tier.
 - **Power:** the laptop battery covers outages; a small UPS or solar pack keeps the router up.
+
+**One-time setup on a Windows laptop** (found in the 10–11 Oct dry runs):
+1. **Give Docker enough memory.** Docker Desktop's default (half the RAM) is too small. Create `%UserProfile%\.wslconfig` with:
+   ```
+   [wsl2]
+   memory=12GB
+   swap=4GB
+   ```
+   Then run `wsl --shutdown` and restart Docker Desktop.
+2. **Let phones reach the hub, and only from the hotspot.** In an administrator PowerShell:
+   ```powershell
+   New-NetFirewallRule -DisplayName "Takada hub (laptop hotspot only)" -Direction Inbound -Protocol TCP `
+     -LocalPort 80,443 -LocalAddress 192.168.137.1 -RemoteAddress 192.168.137.0/24 -Action Allow
+   ```
+3. **Keep the hotspot on.** Settings → Network & internet → Mobile hotspot → **Power saving: Off**. Otherwise Windows turns the hotspot off after a few minutes with no phone connected. This happened three times in one afternoon.
+4. **On each phone, once:**
+   - install the hub's certificate (below);
+   - keep the Wi-Fi connection when Android says "no internet" (Samsung: Connections → Wi-Fi → Intelligent Wi-Fi → **Switch to mobile data: Off**). Otherwise the phone sends hub requests over mobile data, where the hub does not exist (phc-scribe ADR-0035 removes this step in the Android app).
+5. **Windows `curl.exe`** cannot check revocation for the hub's own certificate authority. Use `curl.exe --ssl-no-revoke --cacert takada-hub-root.crt https://192.168.137.1/healthz`.
+
+**Faster speech with int8 (optional, recommended):**
+- Copy the int8 folders (CTranslate2; `model.bin`, `config.json`, `vocabulary.json`, plus the tokenizer files of the matching fp32 model) into the `models` volume under `asr-int8/<language>`.
+- Set these in `hub.env`:
+  ```
+  PHC_ASR=ct2
+  PHC_ASR_INT8_MODELS=en=/models/asr-int8/en
+  ```
+- Languages not listed keep their fp32 model. Add Yorùbá and Pidgin to the list as each passes its test-pool check (phc-scribe ADR-0032).
 
 **Steps:**
 1. Install Docker (Windows: Docker Desktop with WSL2).
@@ -130,5 +158,5 @@ On the phone: Takada → ⚙ Settings → hub address + the 8-character code.
 
 ## Known limits (honest list)
 - **One server replica.** The server stores events in SQLite. Running several replicas in the cloud first needs the move to Postgres (architecture B4); the manifests say so.
-- **Drafting throughput on a laptop CPU is not measured yet.** A load test against the hub will publish visits per hour per hardware tier (ADR-0023 §3).
+- **Drafting throughput under load is not measured yet.** Single drafts are measured (above); a load test against the hub will publish visits per hour per hardware tier (ADR-0023 §3).
 - **Clinical content is a draft:** the rules and the visit guide are not for clinical use until the clinical adviser signs them off in the review app.
