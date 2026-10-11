@@ -44,6 +44,8 @@ export const VisitEvent = z.discriminatedUnion("type", [
       language: z.enum(["yo", "pcm", "en", "auto"]),
       firstContact: z.boolean().nullable(),
       weeks: z.number().min(0).max(45).nullable(),
+      // Asked before recording (phc-scribe ADR-0033); absent on visits started before it.
+      recordingConsent: z.boolean().optional(),
     }),
   }),
   z.object({ ...base, type: z.literal("note.added"), payload: z.object({ text: z.string().min(1).max(20_000) }) }),

@@ -94,6 +94,7 @@ function StartVisit({ profile, open, onClose }: { profile: Profile; open: boolea
   const [weeks, setWeeks] = useState("");
   const [first, setFirst] = useState<"yes" | "no" | "unknown">("unknown");
   const [language, setLanguage] = useState<"yo" | "pcm" | "en" | "auto">("auto");
+  const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function start(e: FormEvent) {
     e.preventDefault();
@@ -104,7 +105,7 @@ function StartVisit({ profile, open, onClose }: { profile: Profile; open: boolea
     try {
       await append({
         visitId, deviceId: profile.deviceId, worker: profile.worker, type: "visit.started",
-        payload: { facility: profile.facility, patientRef: patientRef.trim(), language, firstContact: first === "unknown" ? null : first === "yes", weeks: w },
+        payload: { facility: profile.facility, patientRef: patientRef.trim(), language, firstContact: first === "unknown" ? null : first === "yes", weeks: w, recordingConsent: consent },
       });
       onClose();
       go(`/visit/${visitId}`);
@@ -128,6 +129,10 @@ function StartVisit({ profile, open, onClose }: { profile: Profile; open: boolea
         <div className="field"><span>Language</span>
           <Segmented id="lang" label="Language" value={language} onChange={setLanguage} options={[["auto", "Auto"], ["yo", "Yorùbá"], ["pcm", "Pidgin"], ["en", "English"]]} />
         </div>
+        <label className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ width: 22, height: 22, marginTop: 2 }} />
+          <span><b>She agrees to the visit being recorded</b><br /><span className="faint small">Ask her first. The recording is deleted from the hub 7 days after you confirm the record. Without it, type notes instead.</span></span>
+        </label>
         <ErrorNote error={error} />
         <m.button className="btn primary block xl" type="submit" whileTap={{ scale: 0.97 }}>Begin visit <I.arrow /></m.button>
       </form>

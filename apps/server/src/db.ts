@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   not_before TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(status, priority DESC, created_at);
+-- Retention purges (ADR-0033): counts only, never content.
+CREATE TABLE IF NOT EXISTS purges (visit_id TEXT NOT NULL, at TEXT NOT NULL, audio_files INTEGER NOT NULL, transcripts INTEGER NOT NULL);
 `;
 
 export function openDb(path: string): DatabaseSync {

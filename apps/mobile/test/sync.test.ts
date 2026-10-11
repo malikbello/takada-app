@@ -140,6 +140,25 @@ describe("sync", () => {
     expect(hasUndraftedAudio({ audio: [clip("a")], draft, confirmed: null }, [])).toBe(false); // drafted before requests were kept
   });
 
+  it("deletes the phone's copy of a recording only once the hub has it and the record is confirmed (ADR-0033)", async () => {
+    const p = await saveProfile("Nurse A", "PHC-1");
+    const stuck = crypto.randomUUID();
+    fakeHub({ failAudio: new Set([stuck]) });
+    await pair("http://hub.test", "abcd2345", p.deviceId, p.worker);
+    const done = await newVisit(p.deviceId, 0), open = await newVisit(p.deviceId, 0);
+    const sent = crypto.randomUUID(), openClip = crypto.randomUUID();
+    const blob = new Blob([new Uint8Array(100)], { type: "audio/wav" });
+    const at = new Date().toISOString();
+    await db.blobs.bulkPut([
+      { id: sent, visitId: done, blob, createdAt: at, uploaded: 0 },
+      { id: stuck, visitId: done, blob, createdAt: at, uploaded: 0 }, // the hub refuses it
+      { id: openClip, visitId: open, blob, createdAt: at, uploaded: 0 }, // not confirmed yet
+    ]);
+    await append({ visitId: done, deviceId: p.deviceId, worker: "Nurse A", type: "record.confirmed", payload: { recordHash: "a".repeat(64) } });
+    await syncOnce();
+    expect((await db.blobs.toArray()).map((b) => b.id).sort()).toEqual([stuck, openClip].sort());
+  });
+
   it("gives large recordings time to upload", () => {
     expect(timeoutFor()).toBe(30_000);
     expect(timeoutFor(60_000_000)).toBeGreaterThan(600_000);

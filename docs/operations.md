@@ -117,7 +117,16 @@ On the phone: Takada → ⚙ Settings → hub address + the 8-character code.
 - **Backups:**
   - The hub's `takada-data` volume holds the SQLite database and recordings; copy it nightly to external storage.
   - The cloud copy of every synced event is the second copy.
-  - Phones never delete an event until the hub has acknowledged it.
+  - Phones never delete an event until the hub has acknowledged it. Recordings and full transcripts are deleted on purpose after their retention time (below), so backups hold them for at most that long plus the backup age.
+
+## Recordings, transcripts and consent (phc-scribe ADR-0033)
+- **Consent first:** the new-visit form asks "She agrees to the visit being recorded". Without the tick, the record button is off for that visit and typed notes still work.
+- **The phone** deletes its copy of a recording once the hub has stored it and the record's confirmation has reached the hub.
+- **The hub** deletes recordings and empties full transcripts (findings and their short quotes stay):
+  - `RETAIN_AUDIO_DAYS` (default 7) after a record is confirmed. That is the window for "Correct this record" with a fresh draft; after it, a correction is typed;
+  - `RETAIN_UNCONFIRMED_DAYS` (default 30) after an unfinished visit started.
+- **The purge runs** at start-up and every hour. It logs counts only, and records each purge in the `purges` table.
+- **Before a real pilot:** turn on BitLocker on the hub laptop, check that phones are encrypted (the default on current Android), and complete a data-protection impact assessment with the facility.
 
 ## Known limits (honest list)
 - **One server replica.** The server stores events in SQLite. Running several replicas in the cloud first needs the move to Postgres (architecture B4); the manifests say so.
