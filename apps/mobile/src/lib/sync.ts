@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { reduce, VisitEvent, type Visit } from "@takada/protocol";
 import { db } from "./db";
+import { isDemo, rejoinDemo } from "./demo";
 
 export type Link = { url: string; token: string; facility: string; node: string };
 export type SyncState = { at: string | null; error: string | null; rejected: number; pushing: boolean };
@@ -46,7 +47,15 @@ async function api(link: Link, path: string, init: RequestInit = {}, timeoutMs =
   } catch {
     throw new SyncError("Can't reach the hub");
   }
-  if (res.status === 401) throw new SyncError("This phone is no longer paired. Pair it again.");
+  if (res.status === 401) {
+    if (isDemo(link)) {
+      // The demo hub restarted (it keeps no data across restarts): join it again and resend.
+      await rejoinDemo();
+      setTimeout(() => void syncOnce(), 300);
+      throw new SyncError("Reconnected to the demo hub. Syncing again…");
+    }
+    throw new SyncError("This phone is no longer paired. Pair it again.");
+  }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
     throw new SyncError(body?.error?.message ?? `Hub error ${res.status}`);

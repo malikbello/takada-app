@@ -140,6 +140,15 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     };
     const body = PairBody.parse(req.body);
     const now = new Date().toISOString();
+    // The demo hub's public code (config DEMO_CODE): each phone gets a demo clinic of its own,
+    // the same one every time it pairs, so its visits stay its own.
+    if (cfg.DEMO_CODE && body.code.trim().toUpperCase() === cfg.DEMO_CODE.toUpperCase()) {
+      const token = newToken();
+      const facility = `Demo clinic ${sha256(body.deviceId).slice(0, 8)}`;
+      db.prepare("INSERT INTO devices (id, facility, worker, token_hash, paired_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET facility = excluded.facility, worker = excluded.worker, token_hash = excluded.token_hash, paired_at = excluded.paired_at, revoked_at = NULL")
+        .run(body.deviceId, facility, body.worker, sha256(token), now);
+      return { token, facility, node: cfg.NODE_NAME, role: cfg.ROLE, demo: true };
+    }
     const row = db.prepare("SELECT facility, expires_at, used_at FROM pairing_codes WHERE code_hash = ?").get(sha256(body.code.toUpperCase())) as
       | { facility: string; expires_at: string; used_at: string | null }
       | undefined;
@@ -216,6 +225,16 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
   app.post("/v1/jobs", { preHandler: requireDevice }, async (req, reply) => {
     const body = JobBody.parse(req.body);
     ownVisit(req, body.visitId);
+    if (cfg.DEMO_CODE) {
+      // Demo hub: a generous limit per phone (each has its own clinic) and a daily ceiling that
+      // keeps the GPU inside its free credit. A judge testing seriously asks for a handful.
+      const count = (sql: string, ...a: string[]) => Number((db.prepare(sql).get(...a) as { n: number }).n);
+      const since = (ms: number) => new Date(Date.now() - ms).toISOString();
+      if (count("SELECT COUNT(*) AS n FROM jobs WHERE facility = ? AND created_at > ?", req.device!.facility, since(3_600_000)) >= cfg.DEMO_DRAFTS_PER_HOUR)
+        throw new ApiError(429, "rate_limited", "This demo phone has asked for many AI drafts this hour. Please try again a little later.");
+      if (count("SELECT COUNT(*) AS n FROM jobs WHERE created_at > ?", since(86_400_000)) >= cfg.DEMO_DRAFTS_PER_DAY)
+        throw new ApiError(429, "demo_busy", "The demo has reached today's limit of AI drafts. Please try again tomorrow.");
+    }
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     db.prepare("INSERT INTO jobs (id, visit_id, facility, language, audio_ids, priority, status, created_at, updated_at, not_before) VALUES (?,?,?,?,?,?,?,?,?,?)")

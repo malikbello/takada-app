@@ -280,3 +280,41 @@ describe("long text", () => {
     expect(mergeDrafts([{ findings: [], vitals: {}, model: "m", needsReview: [] }]).needsReview).toEqual([]);
   });
 });
+
+describe("demo hub (the judges' sandbox)", () => {
+  const demoApp = (over: Record<string, string> = {}) =>
+    buildApp(openDb(":memory:"), loadConfig({ ADMIN_TOKEN: ADMIN, LOG_LEVEL: "silent", DEMO_CODE: "TAKADA26", ...over } as NodeJS.ProcessEnv));
+  const demoPair = async (a: ReturnType<typeof buildApp>, deviceId: string) =>
+    (await a.inject({ method: "POST", url: "/v1/pair", payload: { code: "takada26", deviceId, worker: "judge" } })).json();
+
+  it("gives each phone a demo clinic of its own, the same one when it pairs again", async () => {
+    const a = demoApp();
+    const p1 = await demoPair(a, "phone-a");
+    const p2 = await demoPair(a, "phone-b");
+    const again = await demoPair(a, "phone-a");
+    expect(p1.demo).toBe(true);
+    expect(p1.facility).not.toBe(p2.facility);
+    expect(again.facility).toBe(p1.facility);
+    // a clinic hub has no demo code
+    expect((await app.inject({ method: "POST", url: "/v1/pair", payload: { code: "TAKADA26", deviceId: "x", worker: "y" } })).statusCode).toBe(403);
+  });
+
+  it("limits AI drafts per phone and per day, and says why", async () => {
+    const a = demoApp({ DEMO_DRAFTS_PER_HOUR: "2", DEMO_DRAFTS_PER_DAY: "3" });
+    const job = async (deviceId: string) => {
+      const p = await demoPair(a, deviceId);
+      const ev = await visitEvents(deviceId, p.facility);
+      await a.inject({ method: "POST", url: "/v1/sync/push", headers: auth(p.token), payload: { events: ev } });
+      return a.inject({ method: "POST", url: "/v1/jobs", headers: auth(p.token), payload: { visitId: ev[0]!.visitId, language: "pcm", audioIds: [] } });
+    };
+    expect((await job("p1")).statusCode).toBe(202);
+    expect((await job("p1")).statusCode).toBe(202);
+    const third = await job("p1");
+    expect(third.statusCode).toBe(429);
+    expect(third.json().error.code).toBe("rate_limited");
+    expect((await job("p2")).statusCode).toBe(202);
+    const busy = await job("p3");
+    expect(busy.statusCode).toBe(429);
+    expect(busy.json().error.code).toBe("demo_busy");
+  });
+});

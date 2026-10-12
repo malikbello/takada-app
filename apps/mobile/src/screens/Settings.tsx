@@ -5,6 +5,7 @@ import { ErrorNote, TopBar } from "../components/ui";
 import { LANGS } from "../lib/greet";
 import { applyEffects, getEffects, setEffects, type Effects } from "../lib/effects";
 import { getProfile, saveProfile, useLive, type Profile } from "../lib/store";
+import { DEMO_HUB, isDemo, joinDemo } from "../lib/demo";
 import { getLink, pair, syncOnce, useSyncState } from "../lib/sync";
 
 export function Settings({ profile, onProfile }: { profile: Profile; onProfile: (p: Profile) => void }) {
@@ -15,6 +16,20 @@ export function Settings({ profile, onProfile }: { profile: Profile; onProfile: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fx, setFx] = useState<Effects>(getEffects());
+  async function doDemo() {
+    setBusy(true);
+    setError(null);
+    try {
+      await joinDemo(profile);
+      const updated = await getProfile();
+      if (updated) onProfile(updated);
+      await syncOnce();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function doPair(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -58,12 +73,21 @@ export function Settings({ profile, onProfile }: { profile: Profile; onProfile: 
           </div>
           <p className="faint tiny" style={{ margin: 0 }}>Auto uses the light style on phones with little memory, so the app never lags.</p>
         </section>
+        {DEMO_HUB && !isDemo(link) && (
+          <section className="card stack">
+            <div className="row"><span className="badge-ic" style={{ background: "var(--lavender)", color: "var(--plum)" }}><I.sparkle /></span><div className="h grow">Try the AI demo</div></div>
+            <p className="small" style={{ margin: 0 }}>No clinic hub? Join the demo hub in the cloud. It turns your recording into the antenatal record with the fine-tuned N‑ATLaS, usually in about a minute.</p>
+            <p className="faint tiny" style={{ margin: 0 }}>For trying Tákàdá only: use made-up visits, never real patients. Demo recordings are deleted after a day.</p>
+            <m.button className="btn primary block" onClick={() => void doDemo()} disabled={busy} whileTap={{ scale: 0.97 }}>{busy ? "Joining…" : "Use the AI demo"} <I.arrow /></m.button>
+          </section>
+        )}
         <section className="card stack">
-          <div className="row"><span className="badge-ic" style={{ background: "var(--lavender)", color: "var(--plum)" }}><I.shield /></span><div className="h grow">Clinic hub</div>
+          <div className="row"><span className="badge-ic" style={{ background: "var(--lavender)", color: "var(--plum)" }}><I.shield /></span><div className="h grow">{isDemo(link) ? "Demo hub (cloud)" : "Clinic hub"}</div>
             {link && <span className={`pill ${sync.error ? "danger" : "sage"}`}><span className="dot" />{sync.error ? "Problem" : "Paired"}</span>}</div>
           {link ? (
             <>
               <p className="small" style={{ margin: 0 }}>Paired with <b>{link.node}</b> · {link.facility}</p>
+              {isDemo(link) && <p className="faint tiny" style={{ margin: 0 }}>Demo only: no real patients. Recordings are deleted after a day.</p>}
               <p className="faint tiny" style={{ margin: 0 }}>{link.url}</p>
               <p className="small muted" style={{ margin: 0 }}>{sync.pushing ? "Syncing…" : sync.at ? `Last synced ${new Date(sync.at).toLocaleTimeString("en-NG", { timeStyle: "short" })}` : "Not synced yet"}</p>
               {sync.rejected > 0 && <p className="err">{sync.rejected} change(s) were refused by the hub. Ask your supervisor.</p>}
