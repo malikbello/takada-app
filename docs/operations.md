@@ -77,14 +77,14 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
    - keep the Wi-Fi connection when Android says "no internet" (Samsung: Connections → Wi-Fi → Intelligent Wi-Fi → **Switch to mobile data: Off**). Otherwise the phone sends hub requests over mobile data, where the hub does not exist (phc-scribe ADR-0035 removes this step in the Android app).
 5. **Windows `curl.exe`** cannot check revocation for the hub's own certificate authority. Use `curl.exe --ssl-no-revoke --cacert takada-hub-root.crt https://192.168.137.1/healthz`.
 
-**Faster speech with int8 (optional, recommended):**
+**Faster speech with int8 (recommended; checked on dev and test data, phc-scribe ADR-0032):**
 - Step 4's `fetch_models` also installs the int8 builds into `asr-int8/en`, `asr-int8/yo` and `asr-int8/pcm`, each checked to be complete. On its own: `... scribe python -m phc_scribe.fetch_models --only int8`.
 - Set these in `hub.env`:
   ```
   PHC_ASR=ct2
-  PHC_ASR_INT8_MODELS=en=/models/asr-int8/en
+  PHC_ASR_INT8_MODELS=en=/models/asr-int8/en,yo=/models/asr-int8/yo,pcm=/models/asr-int8/pcm
   ```
-- Languages not listed keep their fp32 model. Add Yorùbá and Pidgin to the list as each passes its test-pool check (phc-scribe ADR-0032).
+- All three passed their checks: word error rates are within 1 point of fp32, and each clip transcribes 6–7× faster. A language not listed keeps its fp32 model (`PHC_ASR_MODELS`).
 
 **Steps:**
 1. Install Docker (Windows: Docker Desktop with WSL2).
