@@ -77,6 +77,12 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
    - keep the Wi-Fi connection when Android says "no internet" (Samsung: Connections → Wi-Fi → Intelligent Wi-Fi → **Switch to mobile data: Off**). Otherwise the phone sends hub requests over mobile data, where the hub does not exist (phc-scribe ADR-0035 removes this step in the Android app).
 5. **Windows `curl.exe`** cannot check revocation for the hub's own certificate authority. Use `curl.exe --ssl-no-revoke --cacert takada-hub-root.crt https://192.168.137.1/healthz`.
 
+**Every clinic day: keep the laptop for the hub.**
+- **Close other programs** (browsers with many tabs, editors, video tools) before the first visit. The note model needs about 6 GB of memory to itself.
+- **What happens without it:** in the 12 Oct end-to-end test, with under 2 GB free, one draft took 12.9 minutes instead of the usual 2–4.
+- **The hub waits for slow drafts:** the model call is given up to 14 minutes (`PHC_LLAMACPP_TIMEOUT`, default 840 s in `hub.yml`). Before that change, phc-scribe's 600 s default cancelled long drafts, and each of the 3 attempts started over.
+- **Check free memory** in Task Manager → Performance → Memory ("Available").
+
 **Faster speech with int8 (recommended; checked on dev and test data, phc-scribe ADR-0032):**
 - Step 4's `fetch_models` also installs the int8 builds into `asr-int8/en`, `asr-int8/yo` and `asr-int8/pcm`, each checked to be complete. On its own: `... scribe python -m phc_scribe.fetch_models --only int8`.
 - Set these in `hub.env`:

@@ -39,6 +39,11 @@ services:
       PHC_API_KEY_HASHES: ${PHC_SCRIBE_KEY_HASH:?set PHC_SCRIBE_KEY_HASH in hub.env}
       PHC_EXTRACTOR: ${PHC_EXTRACTOR:-keyword}
       PHC_LLAMACPP_URL: http://llm:8080
+      # A draft on a 4-core laptop CPU takes 2-5 minutes, and a long visit (about 2,000 input
+      # and 400 output tokens) can approach 10; with little free memory one took 12.9 (12 Oct).
+      # phc-scribe's 600 s default cancelled such drafts, and each of the 3 attempts started over.
+      # 840 s stays inside the hub's own 900 s wait for phc-scribe.
+      PHC_LLAMACPP_TIMEOUT: ${PHC_LLAMACPP_TIMEOUT:-840}
       PHC_ASR: ${PHC_ASR:-off}
       PHC_ASR_MODELS: ${PHC_ASR_MODELS:-}
       # With PHC_ASR=ct2: the int8 speech folders, one model at a time as each passes its
