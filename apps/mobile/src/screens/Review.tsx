@@ -8,7 +8,7 @@ import { spring } from "../lib/motion";
 import { go } from "../lib/nav";
 import { append, useLive, visitEvents, type Profile } from "../lib/store";
 import { label, referralNote, vitalsLine } from "../lib/summary";
-import { draftedAudio, getLink, hasUndraftedAudio } from "../lib/sync";
+import { draftedAudio, getLink, hasUndraftedAudio, syncOnce } from "../lib/sync";
 
 const ASSERT: Record<string, string> = { present: "Present", absent: "Absent", possible: "Possible", historical: "Past pregnancy" };
 
@@ -43,6 +43,7 @@ export function Review({ id, profile }: { id: string; profile: Profile }) {
     try {
       await append({ ...who, type: "record.confirmed", payload: { recordHash: await recordHash(visit) } });
       setCelebrate(true);
+      if (link) void syncOnce({ ifIdle: true }); // send the signed record now, not at the next tick
     } catch (e) {
       setErr((e as Error).message);
     } finally {
