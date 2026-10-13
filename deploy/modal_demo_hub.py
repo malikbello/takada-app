@@ -29,7 +29,7 @@ image = (
             "PORT": "8080",
             "DB_PATH": "/data/takada.sqlite",
             "AUDIO_DIR": "/data/audio",
-            "PHC_SCRIBE_URL": "https://malikbello--takada-demo-api.modal.run",
+            "PHC_SCRIBE_URL": "https://malikbello--takada-demo-api.us-east.modal.run",
             "CORS_ORIGINS": "https://takada-app.vercel.app",
             "DEMO_CODE": "TAKADA26",
             "DEMO_DRAFTS_PER_HOUR": "10",
