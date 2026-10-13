@@ -5,7 +5,9 @@ import { ErrorNote } from "../components/ui";
 import { LANGS, welcome, type Lang } from "../lib/greet";
 import { ease, spring } from "../lib/motion";
 import { go } from "../lib/nav";
-import { saveProfile, type Profile } from "../lib/store";
+import { DEMO_HUB, joinDemo } from "../lib/demo";
+import { getProfile, saveProfile, type Profile } from "../lib/store";
+import { syncOnce } from "../lib/sync";
 
 const PROMISES: [IconName, string, string, string, string][] = [
   ["mic", "Talk as you always do", "Yorùbá, Pidgin or English. Tákàdá writes the record.", "#fff1ec", "#d4573a"],
@@ -22,6 +24,22 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
   const [lang, setLang] = useState<Lang>("yo");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // One tap from the first screen to a phone paired with the cloud demo hub (judges, visitors).
+  async function tryDemo() {
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await saveProfile("Demo user", "Demo clinic", lang);
+      await joinDemo(p);
+      onDone((await getProfile()) ?? p); // the hub names the demo clinic
+      go("/");
+      void syncOnce();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -65,8 +83,15 @@ export function Welcome({ onDone }: { onDone: (p: Profile) => void }) {
               initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 2.5 }} whileTap={{ scale: 0.97 }}>
               Get started <I.arrow />
             </m.button>
+            {DEMO_HUB && (
+              <m.button className="btn soft block" style={{ marginTop: 10 }} onClick={() => void tryDemo()} disabled={busy}
+                initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 2.6 }} whileTap={{ scale: 0.97 }}>
+                <I.sparkle /> {busy ? "Joining the demo…" : "Try the AI demo now"}
+              </m.button>
+            )}
+            <ErrorNote error={error} />
             <m.p className="faint tiny center" style={{ marginTop: 12 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.7 }}>
-              Records stay on this phone until they sync to your clinic.
+              {DEMO_HUB ? "The demo drafts with the fine-tuned N‑ATLaS in the cloud. Made-up visits only, never real patients." : "Records stay on this phone until they sync to your clinic."}
             </m.p>
           </m.main>
         ) : (
