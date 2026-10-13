@@ -29,6 +29,26 @@ npx vercel deploy apps/mobile/dist --prod
 ```
 Without a paired hub it records, flags danger signs and runs the visit guide on the phone; AI drafting and sync need a hub.
 
+## The public demo hub (the judges' sandbox)
+**What it is:** a cloud hub so anyone can try AI drafting from https://takada-app.vercel.app. It runs the same server as a clinic hub with `ROLE=cloud` (`deploy/modal_demo_hub.py`). It drafts with the fine-tuned N-ATLaS on a GPU (phc-scribe `deploy/modal_demo.py`).
+
+**How someone uses it:** **Try the AI demo** (Today screen or Settings) pairs the phone with the public code (`DEMO_CODE`). Each phone gets a demo clinic of its own, so no one sees another's visits. The app is labelled "Demo only: no real patients".
+
+**Limits:**
+- **Drafts:** 10 AI drafts per phone per hour (`DEMO_DRAFTS_PER_HOUR`) and 25 a day in all (`DEMO_DRAFTS_PER_DAY`), with a clear message when either is reached.
+- **Retention:** recordings and transcripts are deleted after a day (`RETAIN_*_DAYS=1`).
+- **Cost:** the GPU runs only while drafting (one container, scales to zero after a minute idle), and the Modal workspace spend limit is $0.
+
+**Restarts:** the hub keeps its data on the container disk. After a restart, phones join again and resend their visits by themselves (`apps/mobile/src/lib/demo.ts`).
+
+**Deploy:**
+```bash
+pnpm --filter @takada/server build && modal deploy deploy/modal_demo_hub.py   # the hub
+VITE_DEMO_HUB=https://malikbello--takada-demo-hub.us-east.modal.run pnpm --filter mobile build
+npx vercel deploy apps/mobile/dist --prod                                      # the app with the demo card
+```
+Clinic builds leave `VITE_DEMO_HUB` unset, so they never show the demo.
+
 ## Set up a clinic hub (works with no internet)
 **What the hub is.** One laptop or mini-PC in the clinic that runs the AI and keeps the clinic's copy of every record. Phones talk to it over the clinic's own Wi-Fi; no internet is needed at any point in a visit.
 

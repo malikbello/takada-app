@@ -20,6 +20,15 @@ const Env = z.object({
   RETAIN_AUDIO_DAYS: z.coerce.number().min(0).max(3650).default(7),
   /** Days an unconfirmed visit's recordings and transcript are kept from its start. */
   RETAIN_UNCONFIRMED_DAYS: z.coerce.number().min(1).max(3650).default(30),
+  /**
+   * The public demo hub only (the judges' sandbox; never set on a clinic hub). Anyone may pair
+   * with this code, and each phone gets a demo clinic of its own, so no one sees another's visits.
+   */
+  DEMO_CODE: z.string().min(6).max(16).optional(),
+  /** Demo hub: AI drafts one demo phone may ask for in an hour. */
+  DEMO_DRAFTS_PER_HOUR: z.coerce.number().int().min(1).default(10),
+  /** Demo hub: AI drafts for all demo phones in 24 hours; keeps the GPU inside its free credit. */
+  DEMO_DRAFTS_PER_DAY: z.coerce.number().int().min(1).default(25),
   /** The built phone app; the hub serves it so phones load it from the clinic, same origin. */
   STATIC_DIR: z.string().optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

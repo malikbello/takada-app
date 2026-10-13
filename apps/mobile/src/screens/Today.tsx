@@ -8,13 +8,15 @@ import { ease, spring } from "../lib/motion";
 import { go } from "../lib/nav";
 import { useOnline } from "../lib/online";
 import { allVisits, append, pendingCount, useLive, type Profile } from "../lib/store";
-import { useSyncState } from "../lib/sync";
+import { DEMO_HUB } from "../lib/demo";
+import { getLink, useSyncState } from "../lib/sync";
 
 export function Today({ profile }: { profile: Profile }) {
   const { data: visits, error } = useLive(allVisits);
   const { data: pending } = useLive(pendingCount);
   const online = useOnline();
   const sync = useSyncState();
+  const { data: link } = useLive(getLink);
   const [starting, setStarting] = useState(false);
   const g = greeting(profile.lang);
   const today = new Date().toDateString();
@@ -52,6 +54,14 @@ export function Today({ profile }: { profile: Profile }) {
           <span style={{ width: 24, height: 24, display: "grid" }}><I.arrow /></span>
         </div>
       </m.button>
+
+      {DEMO_HUB && link === null && (
+        <m.a href="#/settings" className="card row" style={{ gap: 12, textDecoration: "none", color: "inherit" }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+          <span className="badge-ic" style={{ background: "var(--lavender)", color: "var(--plum)" }}><I.sparkle /></span>
+          <span className="grow"><b>Try the AI demo</b><span className="muted small" style={{ display: "block" }}>No clinic hub? Draft records with the fine-tuned N‑ATLaS in the cloud.</span></span>
+          <span style={{ width: 20, height: 20, display: "grid" }}><I.arrow /></span>
+        </m.a>
+      )}
 
       <div className="stats">
         {[[todays.length, "Visits today", undefined], [open, "To confirm", open ? "var(--honey)" : undefined], [danger, "Danger today", danger ? "var(--danger)" : undefined]].map(([n, l, c], i) => (
