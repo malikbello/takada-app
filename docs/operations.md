@@ -44,7 +44,7 @@ Without a paired hub it records, flags danger signs and runs the visit guide on 
 **Deploy:**
 ```bash
 pnpm --filter @takada/server build && modal deploy deploy/modal_demo_hub.py   # the hub
-VITE_DEMO_HUB=https://malikbello--takada-demo-hub.modal.run pnpm --filter mobile build
+VITE_DEMO_HUB=https://malikbello--takada-demo-hub.us-east.modal.run pnpm --filter mobile build
 npx vercel deploy apps/mobile/dist --prod                                      # the app with the demo card
 ```
 Clinic builds leave `VITE_DEMO_HUB` unset, so they never show the demo.

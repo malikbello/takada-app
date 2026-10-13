@@ -9,7 +9,7 @@ deploy/modal_demo.py).
   on the container disk: after a restart, phones join again and resend (apps/mobile lib/demo.ts).
 
     pnpm --filter @takada/server build        # apps/server/dist/main.js, a single bundle
-    modal deploy deploy/modal_demo_hub.py     # https://malikbello--takada-demo-hub.modal.run
+    modal deploy deploy/modal_demo_hub.py     # https://malikbello--takada-demo-hub.us-east.modal.run
 """
 
 import os
