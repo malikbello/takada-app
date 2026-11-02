@@ -9,3 +9,6 @@ coverage/
 data/
 .DS_Store
 deploy/compose/hub.env
+
+# Local agent session files: never commit (rules live in the private workspace)
+.claude/
