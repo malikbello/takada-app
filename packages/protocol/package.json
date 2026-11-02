@@ -6,6 +6,6 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run", "build": "tsc --noEmit" },
-  "dependencies": { "zod": "3.25.76", "@takada/clinical": "workspace:*" },
+  "dependencies": { "zod": "4.6.6", "@takada/clinical": "workspace:*" },
   "devDependencies": { "typescript": "5.9.2", "vitest": "3.2.4", "@types/node": "22.18.6" }
 }

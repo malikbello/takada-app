@@ -14,8 +14,8 @@
     "@takada/clinical": "workspace:*",
     "@takada/protocol": "workspace:*",
     "fastify": "5.12.5",
-    "undici": "6.29.0",
-    "zod": "3.25.76"
+    "undici": "6.29.1",
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/node": "22.18.6",
