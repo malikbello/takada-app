@@ -4,6 +4,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -40,6 +41,8 @@ const CodeBody = z.object({ facility: z.string().min(1).max(64), ttlMinutes: z.n
 const JobBody = z.object({ visitId: z.string().uuid(), language: z.enum(["yo", "pcm", "en", "ha", "ig", "auto"]), audioIds: z.array(z.string().uuid()).max(20) });
 const PullQuery = z.object({ after: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(1000).default(500) });
 
+export const RATE_LIMIT_PER_MINUTE = 600;
+
 export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
   const app = Fastify({
     logger: {
@@ -56,6 +59,17 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     // at a clinic would share Caddy's address, and one nurse's typos would lock pairing for all.
     trustProxy: true,
     genReqId: () => crypto.randomUUID(),
+  });
+
+  // A ceiling on every route, per client address (trustProxy gives each phone its own).
+  // Generous for a clinic's sync traffic; the stricter pairing and AI-draft limits below still apply.
+  // Routes below are declared before the plugin loads, so its global onRoute hook would miss
+  // them; a root onRequest hook covers every route instead (the test proves it).
+  app.register(rateLimit, { global: false });
+  let limiter: ReturnType<FastifyInstance["rateLimit"]> | undefined;
+  app.addHook("onRequest", async (req, reply) => {
+    limiter ??= app.rateLimit({ max: RATE_LIMIT_PER_MINUTE, timeWindow: "1 minute" });
+    await limiter.call(app, req, reply);
   });
 
   app.addContentTypeParser(["audio/wav", "audio/x-wav", "application/octet-stream"], { parseAs: "buffer", bodyLimit: cfg.MAX_AUDIO_MB * 1024 * 1024 }, (_r, body, done) => done(null, body));
@@ -77,6 +91,7 @@ export function buildApp(db: DatabaseSync, cfg: Config): FastifyInstance {
     if (err instanceof ApiError) return reply.code(err.status).send({ error: { code: err.code, message: err.message } });
     if (err instanceof z.ZodError) return reply.code(400).send({ error: { code: "invalid_request", message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") } });
     const status = (err as { statusCode?: number }).statusCode;
+    if (status === 429) return reply.code(429).send({ error: { code: "rate_limited", message: "Too many requests. Wait a minute, then try again." } });
     if (status && status < 500) return reply.code(status).send({ error: { code: "bad_request", message: err.message } });
     req.log.error({ err: { message: err.message, stack: err.stack } }, "unhandled error");
     return reply.code(500).send({ error: { code: "internal", message: "Something went wrong" } });

@@ -10,6 +10,7 @@
     "build": "tsc --noEmit && esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\""
   },
   "dependencies": {
+    "@fastify/rate-limit": "11.2.2",
     "@fastify/static": "10.1.5",
     "@takada/clinical": "workspace:*",
     "@takada/protocol": "workspace:*",

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeEvent, type VisitEvent } from "@takada/protocol";
-import { buildApp } from "../src/app";
+import { buildApp, RATE_LIMIT_PER_MINUTE } from "../src/app";
 import { loadConfig } from "../src/config";
 import { openDb } from "../src/db";
 import { claimNext, EXTRACT_CHARS, mergeDrafts, runJob, splitText } from "../src/queue";
@@ -316,5 +316,18 @@ describe("demo hub (the judges' sandbox)", () => {
     const busy = await job("p3");
     expect(busy.statusCode).toBe(429);
     expect(busy.json().error.code).toBe("demo_busy");
+  });
+});
+
+describe("rate limit", () => {
+  it("caps every route per client address and answers in the API's error shape", async () => {
+    const from = (ip: string) => ({ "x-forwarded-for": ip });
+    for (let i = 0; i < RATE_LIMIT_PER_MINUTE; i++) {
+      expect((await app.inject({ method: "GET", url: "/v1/sync/pull", headers: from("10.0.0.1") })).statusCode).toBe(401);
+    }
+    const over = await app.inject({ method: "GET", url: "/v1/sync/pull", headers: from("10.0.0.1") });
+    expect(over.statusCode).toBe(429);
+    expect(over.json().error.code).toBe("rate_limited");
+    expect((await app.inject({ method: "GET", url: "/healthz", headers: from("10.0.0.2") })).statusCode).toBe(200);
   });
 });
