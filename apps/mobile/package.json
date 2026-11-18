@@ -34,8 +34,8 @@
     "@vitejs/plugin-react": "5.2.0",
     "fake-indexeddb": "6.2.2",
     "typescript": "5.9.2",
-    "vite": "7.1.5",
+    "vite": "7.3.7",
     "vite-plugin-pwa": "1.0.3",
-    "vitest": "3.2.4"
+    "vitest": "4.1.12"
   }
 }
