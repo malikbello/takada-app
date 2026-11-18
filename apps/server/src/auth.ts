@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -6,7 +6,8 @@ export const newToken = () => randomBytes(32).toString("base64url");
 /** 8 characters from an alphabet without look-alikes (no 0/O, 1/I/L). */
 export function newPairingCode(): string {
   const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  return [...randomBytes(8)].map((b) => A[b % A.length]).join("");
+  // randomInt draws uniformly; `byte % 31` would favour the first letters.
+  return Array.from({ length: 8 }, () => A[randomInt(A.length)]).join("");
 }
 
 export function safeEqual(a: string, b: string): boolean {
